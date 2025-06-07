@@ -297,7 +297,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
                 <Trash2 className="w-4 h-4 mr-2"/> Delete Entire Day's Entry
               </Button>
           )}
-          <Button type="submit" className="w-full sm:w-auto ml-auto">
+          <Button type="submit" className="w-full sm:w-auto ml-auto whitespace-normal text-center">
             <PlusCircle className="w-4 h-4 mr-2"/> Add Note / Update Link
           </Button>
         </CardFooter>
@@ -307,3 +307,5 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
 }
 
     
+
+      
