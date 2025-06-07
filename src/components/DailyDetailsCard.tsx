@@ -291,13 +291,13 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
           )}
 
         </CardContent>
-        <CardFooter className="flex flex-col md:flex-row md:items-start justify-between gap-3">
+        <CardFooter className="flex flex-col gap-3">
           {onDelete && (log?.editorNotes?.length || log?.spotifyLink || log?.partnerNotes?.length) && ( 
-             <Button type="button" variant="destructive" onClick={handleDeleteEntireEntry} className="w-full md:w-auto">
+             <Button type="button" variant="destructive" onClick={handleDeleteEntireEntry} className="w-full">
                 <Trash2 className="w-4 h-4 mr-2"/> Delete Entire Day's Entry
               </Button>
           )}
-          <Button type="submit" className="w-full md:w-auto whitespace-normal text-center h-auto">
+          <Button type="submit" className="w-full whitespace-normal text-center h-auto">
             <PlusCircle className="w-4 h-4 mr-2"/> Add Note / Update Link
           </Button>
         </CardFooter>
