@@ -12,13 +12,14 @@ export interface SongEntry {
 export interface Event {
   id: string;
   name: string;
-  startDate: string; // YYYY-MM-DD
-  endDate: string; // YYYY-MM-DD
-  createdBy?: string; // Optional: 'editor' or user ID
+  startDate?: string | null; // YYYY-MM-DD - Optional for evergreen
+  endDate?: string | null;   // YYYY-MM-DD - Optional for evergreen
+  isEvergreen?: boolean;
+  createdBy?: string; 
 }
 
 export interface DailyLog {
-  eventId: string; // Link to the Event
+  eventId: string; 
   editorNotes?: string[];
   songs?: {
     editor?: SongEntry | null;
@@ -31,15 +32,12 @@ export interface DailyLog {
 }
 
 export interface AppSettings {
-  // eventName, eventStartDate, eventEndDate are removed
   userRole?: 'editor' | 'partner';
   editorCode?: string;
   partnerCode?: string;
 }
 
-// AppData is less relevant now as global event details are removed.
-// Context will hold events list and selectedEvent directly.
-export interface AppGlobalConfig { // Renamed from AppData for clarity
+export interface AppGlobalConfig { 
   editorCode: string | null;
   partnerCode: string | null;
 }

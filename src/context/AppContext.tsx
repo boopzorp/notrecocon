@@ -13,6 +13,7 @@ const FIRESTORE_SETTINGS_DOC_ID = 'appSettings';
 const FIRESTORE_LOGS_COLLECTION_ID = 'dailyLogs';
 const FIRESTORE_CONFIG_COLLECTION_ID = 'config';
 const FIRESTORE_EVENTS_COLLECTION_ID = 'events';
+const EVERGREEN_EVENT_ID = "___dailyLifeEvent___";
 
 
 interface AppState {
@@ -21,7 +22,7 @@ interface AppState {
   globalConfig: AppGlobalConfig;
   events: Event[];
   selectedEvent: Event | null;
-  logs: Record<string, DailyLog>; // Logs for the selectedEvent, keyed by 'YYYY-MM-DD'
+  logs: Record<string, DailyLog>; 
   isLoadingLogs: boolean;
   isLoadingEvents: boolean;
 }
@@ -38,7 +39,7 @@ type Action =
   | { type: 'UPDATE_EVENT_SUCCESS'; payload: Event }
   | { type: 'DELETE_EVENT_SUCCESS'; payload: string }
   | { type: 'UPSERT_LOG'; payload: { date: string; log: DailyLog } }
-  | { type: 'RESET_DATA_STATE_SUCCESS' }
+  | { type: 'RESET_DATA_STATE_SUCCESS'; payload: { events: Event[] } }
   | { type: 'SET_USER_ROLE'; payload: 'editor' | 'partner' | null };
 
 const initialState: AppState = {
@@ -55,12 +56,12 @@ const initialState: AppState = {
 const AppContext = createContext<
   (AppState & {
     selectEvent: (eventId: string | null) => void;
-    addEvent: (eventData: Omit<Event, 'id' | 'createdBy'>) => Promise<string | null>;
+    addEvent: (eventData: Omit<Event, 'id' | 'createdBy' | 'isEvergreen'>) => Promise<string | null>;
     updateEvent: (eventId: string, eventData: Partial<Omit<Event, 'id' | 'createdBy'>>) => Promise<boolean>;
     deleteEvent: (eventId: string) => Promise<boolean>;
     upsertLog: (date: Date, log: Omit<DailyLog, 'eventId'>) => Promise<void>;
     getLog: (date: Date) => DailyLog | undefined;
-    isEventSelected: () => boolean; // Renamed from isConfigured
+    isEventSelected: () => boolean; 
     resetAllAppData: () => Promise<void>;
     setUserRole: (role: 'editor' | 'partner' | null) => void;
     attemptLoginWithCode: (code: string) => boolean;
@@ -68,6 +69,19 @@ const AppContext = createContext<
 >(undefined);
 
 function appReducer(state: AppState, action: Action): AppState {
+  const sortEvents = (events: Event[]): Event[] => {
+    return events.sort((a, b) => {
+      if (a.isEvergreen && !b.isEvergreen) return -1;
+      if (!a.isEvergreen && b.isEvergreen) return 1;
+      if (a.startDate && b.startDate) {
+        return parseISO(b.startDate).getTime() - parseISO(a.startDate).getTime();
+      }
+      if (a.startDate && !b.startDate) return -1; // Events with start dates before those without (shouldn't happen for non-evergreen)
+      if (!a.startDate && b.startDate) return 1;
+      return a.name.localeCompare(b.name); // Fallback sort by name
+    });
+  };
+
   switch (action.type) {
     case 'INITIALIZE_APP_START':
       return { ...state, isInitialized: false, isLoadingEvents: true };
@@ -75,7 +89,7 @@ function appReducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         globalConfig: action.payload.globalConfig,
-        events: action.payload.events,
+        events: sortEvents(action.payload.events),
         userRole: action.payload.userRole,
         isInitialized: true,
         isLoadingEvents: false,
@@ -97,20 +111,18 @@ function appReducer(state: AppState, action: Action): AppState {
     case 'ADD_EVENT_SUCCESS':
       return {
         ...state,
-        events: [...state.events, action.payload].sort((a, b) => parseISO(b.startDate).getTime() - parseISO(a.startDate).getTime()),
+        events: sortEvents([...state.events, action.payload]),
       };
     case 'UPDATE_EVENT_SUCCESS':
       return {
         ...state,
-        events: state.events.map(event => event.id === action.payload.id ? { ...event, ...action.payload } : event)
-          .sort((a, b) => parseISO(b.startDate).getTime() - parseISO(a.startDate).getTime()),
+        events: sortEvents(state.events.map(event => event.id === action.payload.id ? { ...event, ...action.payload } : event)),
         selectedEvent: state.selectedEvent?.id === action.payload.id ? { ...state.selectedEvent, ...action.payload } : state.selectedEvent,
       };
     case 'DELETE_EVENT_SUCCESS':
       return {
         ...state,
-        events: state.events.filter(event => event.id !== action.payload)
-          .sort((a, b) => parseISO(b.startDate).getTime() - parseISO(a.startDate).getTime()),
+        events: sortEvents(state.events.filter(event => event.id !== action.payload)),
         selectedEvent: state.selectedEvent?.id === action.payload ? null : state.selectedEvent,
         logs: state.selectedEvent?.id === action.payload ? {} : state.logs,
       };
@@ -129,7 +141,7 @@ function appReducer(state: AppState, action: Action): AppState {
         globalConfig: state.globalConfig, 
         userRole: state.userRole, 
         isInitialized: true,
-        events: [],
+        events: sortEvents(action.payload.events), // Ensure evergreen is present after reset
         selectedEvent: null,
         logs: {},
       };
@@ -140,6 +152,27 @@ function appReducer(state: AppState, action: Action): AppState {
   }
 }
 
+const ensureEvergreenEvent = async (): Promise<Event> => {
+  const evergreenEventRef = doc(db, FIRESTORE_EVENTS_COLLECTION_ID, EVERGREEN_EVENT_ID);
+  const evergreenEventSnap = await getDoc(evergreenEventRef);
+
+  if (!evergreenEventSnap.exists()) {
+    const newEvergreenEventData: Event = {
+      id: EVERGREEN_EVENT_ID,
+      name: "Daily Life",
+      isEvergreen: true,
+      startDate: null,
+      endDate: null,
+      createdBy: "system",
+    };
+    await setDoc(evergreenEventRef, newEvergreenEventData);
+    console.log("[AppContext] Created default 'Daily Life' event in Firestore.");
+    return newEvergreenEventData;
+  }
+  return { id: evergreenEventSnap.id, ...evergreenEventSnap.data() } as Event;
+};
+
+
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(appReducer, initialState);
 
@@ -148,12 +181,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       dispatch({ type: 'INITIALIZE_APP_START' });
       try {
         console.log(`[AppContext] Attempting to load initial data. Fetching settings from: ${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}`);
-        
         const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
         const settingsDocSnap = await getDoc(settingsDocRef);
-        
         let appSettingsFromDb: Partial<AppSettings> = {};
-        
         console.log(`[AppContext] settingsDocSnap.exists() = ${settingsDocSnap.exists()}`);
 
         if (settingsDocSnap.exists()) {
@@ -166,9 +196,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
         const eventsCollectionRef = collection(db, FIRESTORE_EVENTS_COLLECTION_ID);
         const eventsSnapshot = await getDocs(eventsCollectionRef);
-        const fetchedEvents: Event[] = eventsSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Event));
-        fetchedEvents.sort((a, b) => parseISO(b.startDate).getTime() - parseISO(a.startDate).getTime());
-        console.log('[AppContext] Fetched events:', fetchedEvents);
+        let fetchedEvents: Event[] = eventsSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Event));
+        
+        // Ensure evergreen event exists and add it to the list if it was fetched or created
+        const evergreenEvent = await ensureEvergreenEvent();
+        if (!fetchedEvents.find(e => e.id === EVERGREEN_EVENT_ID)) {
+            fetchedEvents.push(evergreenEvent); // Add if ensureEvergreenEvent created it and it wasn't in snapshot
+        } else {
+            // If it was in snapshot, ensure our canonical version (from ensureEvergreenEvent) is used
+            fetchedEvents = fetchedEvents.map(e => e.id === EVERGREEN_EVENT_ID ? evergreenEvent : e);
+        }
+
+        console.log('[AppContext] Fetched and processed events (including evergreen):', fetchedEvents);
 
         const storedUserRole = localStorage.getItem(USER_ROLE_LOCAL_STORAGE_KEY) as 'editor' | 'partner' | null;
         
@@ -221,10 +260,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const fetchedLogs: Record<string, DailyLog> = {};
         logsSnapshot.forEach((logDoc) => {
           const logData = logDoc.data() as Omit<DailyLog, 'eventId'>; 
-          fetchedLogs[format(parseISO(logDoc.id.split('_')[0]), 'yyyy-MM-dd')] = {
-            ...logData,
-            eventId: state.selectedEvent!.id 
-          };
+          const dateKey = logDoc.id.startsWith(state.selectedEvent!.id) ? logDoc.id.substring(state.selectedEvent!.id.length + 1) : logDoc.id.split('_')[0];
+          
+          // Validate dateKey format before parsing
+          if (dateKey.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            fetchedLogs[format(parseISO(dateKey), 'yyyy-MM-dd')] = {
+                ...logData,
+                eventId: state.selectedEvent!.id 
+            };
+          } else {
+            console.warn(`[AppContext] Invalid date format in log ID '${logDoc.id}'. Skipping log.`);
+          }
         });
         dispatch({ type: 'LOAD_LOGS_SUCCESS', payload: fetchedLogs });
       } catch (error) {
@@ -250,9 +296,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     dispatch({ type: 'SET_USER_ROLE', payload: role });
   }, [selectEvent]);
 
-  const addEvent = useCallback(async (eventData: Omit<Event, 'id' | 'createdBy'>): Promise<string | null> => {
+  const addEvent = useCallback(async (eventData: Omit<Event, 'id' | 'createdBy' | 'isEvergreen'>): Promise<string | null> => {
     if (state.userRole !== 'editor') {
       console.error("[AppContext] Only editor can add events.");
+      return null;
+    }
+    if (!eventData.startDate || !eventData.endDate) {
+      console.error("[AppContext] Start date and end date are required for new events.");
       return null;
     }
     try {
@@ -261,13 +311,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         createdBy: state.userRole, 
         name: eventData.name.trim(),
         startDate: format(parseISO(eventData.startDate), 'yyyy-MM-dd'), 
-        endDate: format(parseISO(eventData.endDate), 'yyyy-MM-dd'),     
+        endDate: format(parseISO(eventData.endDate), 'yyyy-MM-dd'),  
+        isEvergreen: false,   
       });
       const newEvent: Event = { 
         id: newEventDocRef.id, 
         name: eventData.name.trim(),
         startDate: format(parseISO(eventData.startDate), 'yyyy-MM-dd'),
         endDate: format(parseISO(eventData.endDate), 'yyyy-MM-dd'),
+        isEvergreen: false,
         createdBy: state.userRole 
       };
       dispatch({ type: 'ADD_EVENT_SUCCESS', payload: newEvent });
@@ -283,11 +335,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       console.error("[AppContext] Only editor can update events.");
       return false;
     }
+    if (eventId === EVERGREEN_EVENT_ID && (eventData.hasOwnProperty('startDate') || eventData.hasOwnProperty('endDate') || eventData.hasOwnProperty('isEvergreen'))) {
+        console.error("[AppContext] Start/end dates and evergreen status of 'Daily Life' event cannot be modified.");
+        return false;
+    }
     try {
       const eventDocRef = doc(db, FIRESTORE_EVENTS_COLLECTION_ID, eventId);
       const updateData: Partial<Event> = { ...eventData };
-      if (eventData.startDate) updateData.startDate = format(parseISO(eventData.startDate), 'yyyy-MM-dd');
-      if (eventData.endDate) updateData.endDate = format(parseISO(eventData.endDate), 'yyyy-MM-dd');
+      if (eventData.startDate) updateData.startDate = format(parseISO(eventData.startDate), 'yyyy-MM-dd'); else updateData.startDate = null;
+      if (eventData.endDate) updateData.endDate = format(parseISO(eventData.endDate), 'yyyy-MM-dd'); else updateData.endDate = null;
       if (eventData.name) updateData.name = eventData.name.trim();
 
       await setDoc(eventDocRef, updateData, { merge: true });
@@ -309,6 +365,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (state.userRole !== 'editor') {
       console.error("[AppContext] Only editor can delete events.");
       return false;
+    }
+    if (eventId === EVERGREEN_EVENT_ID) {
+        console.error("[AppContext] The 'Daily Life' event cannot be deleted.");
+        return false;
     }
     try {
       const batch = writeBatch(db);
@@ -333,7 +393,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
     const formattedDate = format(date, 'yyyy-MM-dd');
-    const logId = `${formattedDate}_${state.selectedEvent.id}`; 
+    // For evergreen event, log ID uses formattedDate + EVERGREEN_EVENT_ID to ensure uniqueness if other events share dates
+    // For regular events, it uses formattedDate + eventId
+    const logIdPrefix = state.selectedEvent.id; // Use the actual event ID as prefix
+    const logId = `${logIdPrefix}_${formattedDate}`; 
 
     try {
       const logDocRef = doc(db, FIRESTORE_LOGS_COLLECTION_ID, logId);
@@ -386,13 +449,21 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       console.log(`[AppContext] Marked ${logsSnapshot.size} logs for deletion.`);
 
       const eventsCollectionRef = collection(db, FIRESTORE_EVENTS_COLLECTION_ID);
-      const eventsSnapshot = await getDocs(eventsCollectionRef);
-      eventsSnapshot.docs.forEach((eventDoc) => batch.delete(eventDoc.ref));
-      console.log(`[AppContext] Marked ${eventsSnapshot.size} events for deletion.`);
+      const eventsQuery = query(eventsCollectionRef, where("id", "!=", EVERGREEN_EVENT_ID)); // Exclude evergreen
+      const eventsSnapshotToReset = await getDocs(eventsQuery);
+      eventsSnapshotToReset.docs.forEach((eventDoc) => {
+         if (eventDoc.id !== EVERGREEN_EVENT_ID) { // Double check, though query should handle
+            batch.delete(eventDoc.ref);
+         }
+      });
+      console.log(`[AppContext] Marked ${eventsSnapshotToReset.size} non-evergreen events for deletion.`);
       
       await batch.commit();
-      console.log("[AppContext] Successfully reset all events and logs in Firestore.");
-      dispatch({ type: 'RESET_DATA_STATE_SUCCESS' });
+      console.log("[AppContext] Successfully reset non-evergreen events and all logs in Firestore.");
+      
+      const evergreenEvent = await ensureEvergreenEvent(); // Re-ensure it's there
+      
+      dispatch({ type: 'RESET_DATA_STATE_SUCCESS', payload: { events: [evergreenEvent] } });
       selectEvent(null);
 
     } catch (error) {
