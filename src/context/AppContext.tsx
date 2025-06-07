@@ -13,7 +13,7 @@ const FIRESTORE_SETTINGS_DOC_ID = 'appSettings';
 const FIRESTORE_LOGS_COLLECTION_ID = 'dailyLogs';
 const FIRESTORE_CONFIG_COLLECTION_ID = 'config';
 const FIRESTORE_EVENTS_COLLECTION_ID = 'events';
-const EVERGREEN_EVENT_ID = "___dailyLifeEvent___";
+const EVERGREEN_EVENT_ID = "dailyLifeEvent"; // Changed from "___dailyLifeEvent___"
 
 
 interface AppState {
@@ -84,6 +84,7 @@ function appReducer(state: AppState, action: Action): AppState {
 
   switch (action.type) {
     case 'INITIALIZE_APP_START':
+      console.log('[AppContextReducer] INITIALIZE_APP_START');
       return { ...state, isInitialized: false, isLoadingEvents: true };
     case 'INITIALIZE_APP_SUCCESS':
       console.log('[AppContextReducer] INITIALIZE_APP_SUCCESS with payload:', action.payload);
@@ -97,31 +98,38 @@ function appReducer(state: AppState, action: Action): AppState {
       };
     case 'INITIALIZE_APP_FAILURE':
       console.warn('[AppContextReducer] INITIALIZE_APP_FAILURE');
-      return { ...state, isInitialized: true, isLoadingEvents: false, globalConfig: { editorCode: null, partnerCode: null } }; // Ensure globalConfig is reset on failure
+      return { ...state, isInitialized: true, isLoadingEvents: false, globalConfig: { editorCode: null, partnerCode: null } };
     case 'SELECT_EVENT':
+      console.log('[AppContextReducer] SELECT_EVENT with payload:', action.payload);
       return {
         ...state,
         selectedEvent: action.payload,
         logs: {}, 
       };
     case 'LOAD_LOGS_START':
+      console.log('[AppContextReducer] LOAD_LOGS_START');
       return { ...state, isLoadingLogs: true };
     case 'LOAD_LOGS_SUCCESS':
+      console.log('[AppContextReducer] LOAD_LOGS_SUCCESS with payload:', action.payload);
       return { ...state, logs: action.payload, isLoadingLogs: false };
     case 'LOAD_LOGS_FAILURE':
+      console.warn('[AppContextReducer] LOAD_LOGS_FAILURE');
       return { ...state, isLoadingLogs: false, logs: {} };
     case 'ADD_EVENT_SUCCESS':
+      console.log('[AppContextReducer] ADD_EVENT_SUCCESS with payload:', action.payload);
       return {
         ...state,
         events: sortEvents([...state.events, action.payload]),
       };
     case 'UPDATE_EVENT_SUCCESS':
+      console.log('[AppContextReducer] UPDATE_EVENT_SUCCESS with payload:', action.payload);
       return {
         ...state,
         events: sortEvents(state.events.map(event => event.id === action.payload.id ? { ...event, ...action.payload } : event)),
         selectedEvent: state.selectedEvent?.id === action.payload.id ? { ...state.selectedEvent, ...action.payload } : state.selectedEvent,
       };
     case 'DELETE_EVENT_SUCCESS':
+      console.log('[AppContextReducer] DELETE_EVENT_SUCCESS with payload:', action.payload);
       return {
         ...state,
         events: sortEvents(state.events.filter(event => event.id !== action.payload)),
@@ -129,7 +137,11 @@ function appReducer(state: AppState, action: Action): AppState {
         logs: state.selectedEvent?.id === action.payload ? {} : state.logs,
       };
     case 'UPSERT_LOG':
-      if (!state.selectedEvent) return state; 
+      if (!state.selectedEvent) {
+        console.warn('[AppContextReducer] UPSERT_LOG attempted without selectedEvent. State unchanged.');
+        return state; 
+      }
+      console.log('[AppContextReducer] UPSERT_LOG with payload:', action.payload);
       return {
         ...state,
         logs: {
@@ -138,6 +150,7 @@ function appReducer(state: AppState, action: Action): AppState {
         },
       };
     case 'RESET_DATA_STATE_SUCCESS':
+      console.log('[AppContextReducer] RESET_DATA_STATE_SUCCESS with payload:', action.payload);
       return {
         ...initialState, 
         globalConfig: state.globalConfig, 
@@ -148,6 +161,7 @@ function appReducer(state: AppState, action: Action): AppState {
         logs: {},
       };
     case 'SET_USER_ROLE':
+      console.log('[AppContextReducer] SET_USER_ROLE with payload:', action.payload);
       return { ...state, userRole: action.payload };
     default:
       return state;
@@ -160,7 +174,7 @@ const ensureEvergreenEvent = async (): Promise<Event> => {
   const evergreenEventSnap = await getDoc(evergreenEventRef);
 
   if (!evergreenEventSnap.exists()) {
-    console.log('[ensureEvergreenEvent] Evergreen event does not exist, creating it.');
+    console.log('[ensureEvergreenEvent] Evergreen event does not exist, creating it with ID:', EVERGREEN_EVENT_ID);
     const newEvergreenEventData: Event = {
       id: EVERGREEN_EVENT_ID,
       name: "Daily Life",
@@ -177,8 +191,8 @@ const ensureEvergreenEvent = async (): Promise<Event> => {
   const eventData = evergreenEventSnap.data();
    return { 
       id: evergreenEventSnap.id, 
-      name: eventData?.name || "Daily Life (Fallback Name)", // Add fallback
-      isEvergreen: eventData?.isEvergreen === undefined ? true : eventData.isEvergreen, // Add fallback
+      name: eventData?.name || "Daily Life", 
+      isEvergreen: eventData?.isEvergreen === undefined ? true : eventData.isEvergreen, 
       startDate: eventData?.startDate || null,
       endDate: eventData?.endDate || null,
       createdBy: eventData?.createdBy || "system"
@@ -202,8 +216,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
         if (settingsDocSnap.exists()) {
           appSettingsFromDb = settingsDocSnap.data() as AppSettings;
-          console.log('[AppContext] Raw data from settingsDocSnap.data():', settingsDocSnap.data());
-          console.log('[AppContext] Parsed appSettingsFromDb:', appSettingsFromDb);
+          console.log('[AppContext] Raw data from settingsDocSnap.data():', JSON.parse(JSON.stringify(settingsDocSnap.data())));
+          console.log('[AppContext] Parsed appSettingsFromDb:', JSON.parse(JSON.stringify(appSettingsFromDb)));
         } else {
           console.warn(`[AppContext] Firestore document at '${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}' does NOT exist. Access codes will be null.`);
         }
@@ -215,7 +229,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         console.log('[AppContext] Initially fetched events (before evergreen check):', JSON.parse(JSON.stringify(fetchedEvents)));
         
         console.log('[AppContext] Calling ensureEvergreenEvent...');
-        const evergreenEvent = await ensureEvergreenEvent();
+        const evergreenEvent = await ensureEvergreenEvent(); // This might throw if ID is invalid
         console.log('[AppContext] ensureEvergreenEvent returned:', JSON.parse(JSON.stringify(evergreenEvent)));
 
         if (!fetchedEvents.find(e => e.id === EVERGREEN_EVENT_ID)) {
@@ -255,6 +269,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const selectEvent = useCallback((eventId: string | null) => {
+    console.log(`[AppContext] selectEvent called with eventId: ${eventId}`);
     if (!eventId) {
       dispatch({ type: 'SELECT_EVENT', payload: null });
       return;
@@ -263,7 +278,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (eventToSelect) {
       dispatch({ type: 'SELECT_EVENT', payload: eventToSelect });
     } else {
-      console.warn(`[AppContext] Event with ID '${eventId}' not found in current events list. Not selecting.`);
+      console.warn(`[AppContext] Event with ID '${eventId}' not found in current events list. Not selecting. Current events:`, state.events);
       dispatch({ type: 'SELECT_EVENT', payload: null }); 
     }
   }, [state.events]);
@@ -271,9 +286,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const fetchLogsForSelectedEvent = async () => {
       if (!state.selectedEvent) {
+        console.log('[AppContext] fetchLogsForSelectedEvent: No selected event, clearing logs.');
         dispatch({ type: 'LOAD_LOGS_SUCCESS', payload: {} });
         return;
       }
+      console.log(`[AppContext] fetchLogsForSelectedEvent: Fetching logs for event ID: ${state.selectedEvent.id}`);
       dispatch({ type: 'LOAD_LOGS_START' });
       try {
         const logsQuery = query(collection(db, FIRESTORE_LOGS_COLLECTION_ID), where("eventId", "==", state.selectedEvent.id));
@@ -281,17 +298,24 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const fetchedLogs: Record<string, DailyLog> = {};
         logsSnapshot.forEach((logDoc) => {
           const logData = logDoc.data() as Omit<DailyLog, 'eventId'>; 
-          const dateKey = logDoc.id.startsWith(state.selectedEvent!.id) ? logDoc.id.substring(state.selectedEvent!.id.length + 1) : logDoc.id.split('_')[0];
+          // Log ID is eventId_YYYY-MM-DD. We need YYYY-MM-DD as key.
+          const dateKey = logDoc.id.substring(state.selectedEvent!.id.length + 1);
           
-          if (dateKey.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            fetchedLogs[format(parseISO(dateKey), 'yyyy-MM-dd')] = {
-                ...logData,
-                eventId: state.selectedEvent!.id 
-            };
+          if (dateKey && dateKey.match(/^\d{4}-\d{2}-\d{2}$/)) {
+             const parsedDate = parseISO(dateKey);
+             if (isValid(parsedDate)) {
+                fetchedLogs[format(parsedDate, 'yyyy-MM-dd')] = {
+                    ...logData,
+                    eventId: state.selectedEvent!.id 
+                };
+             } else {
+                console.warn(`[AppContext] Invalid date parsed from log ID component '${dateKey}' (from log ID '${logDoc.id}'). Skipping log.`);
+             }
           } else {
-            console.warn(`[AppContext] Invalid date format in log ID '${logDoc.id}'. Skipping log.`);
+            console.warn(`[AppContext] Could not extract valid date from log ID '${logDoc.id}'. Expected format 'eventId_YYYY-MM-DD'. Skipping log.`);
           }
         });
+        console.log(`[AppContext] fetchLogsForSelectedEvent: Successfully fetched ${Object.keys(fetchedLogs).length} logs for event ${state.selectedEvent.id}.`);
         dispatch({ type: 'LOAD_LOGS_SUCCESS', payload: fetchedLogs });
       } catch (error) {
         console.error(`[AppContext] Failed to load logs for event ${state.selectedEvent.id}:`, error);
@@ -301,12 +325,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (state.isInitialized && state.selectedEvent) { 
         fetchLogsForSelectedEvent();
     } else if (state.isInitialized && !state.selectedEvent) { 
+        console.log('[AppContext] fetchLogsForSelectedEvent: isInitialized but no selected event, ensuring logs are cleared.');
         dispatch({ type: 'LOAD_LOGS_SUCCESS', payload: {} });
     }
   }, [state.selectedEvent, state.isInitialized]);
 
 
   const setUserRole = useCallback((role: 'editor' | 'partner' | null) => {
+    console.log(`[AppContext] setUserRole: Setting role to ${role}`);
     if (role) {
       localStorage.setItem(USER_ROLE_LOCAL_STORAGE_KEY, role);
     } else {
@@ -325,6 +351,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       console.error("[AppContext] Start date and end date are required for new events.");
       return null;
     }
+    console.log("[AppContext] addEvent: Attempting to add event:", eventData);
     try {
       const newEventDocRef = await addDoc(collection(db, FIRESTORE_EVENTS_COLLECTION_ID), {
         ...eventData,
@@ -342,6 +369,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         isEvergreen: false,
         createdBy: state.userRole 
       };
+      console.log("[AppContext] addEvent: Successfully added event, new ID:", newEventDocRef.id);
       dispatch({ type: 'ADD_EVENT_SUCCESS', payload: newEvent });
       return newEventDocRef.id;
     } catch (error) {
@@ -359,6 +387,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         console.error("[AppContext] Start/end dates and evergreen status of 'Daily Life' event cannot be modified.");
         return false;
     }
+    console.log(`[AppContext] updateEvent: Attempting to update event ${eventId} with data:`, eventData);
     try {
       const eventDocRef = doc(db, FIRESTORE_EVENTS_COLLECTION_ID, eventId);
       const updateData: Partial<Event> = { ...eventData };
@@ -368,11 +397,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       await setDoc(eventDocRef, updateData, { merge: true });
       
+      const baseEvent = state.events.find(e => e.id === eventId);
+      if (!baseEvent) {
+        console.error(`[AppContext] updateEvent: Could not find base event with ID ${eventId} in state to merge update.`);
+        return false; 
+      }
       const updatedEventFull: Event = { 
-        ...(state.events.find(e => e.id === eventId) as Event), 
+        ...baseEvent, 
         ...updateData 
       };
-
+      console.log(`[AppContext] updateEvent: Successfully updated event ${eventId}.`);
       dispatch({ type: 'UPDATE_EVENT_SUCCESS', payload: updatedEventFull });
       return true;
     } catch (error) {
@@ -390,6 +424,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         console.error("[AppContext] The 'Daily Life' event cannot be deleted.");
         return false;
     }
+    console.log(`[AppContext] deleteEvent: Attempting to delete event ${eventId}`);
     try {
       const batch = writeBatch(db);
       batch.delete(doc(db, FIRESTORE_EVENTS_COLLECTION_ID, eventId));
@@ -398,6 +433,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       logsSnapshot.docs.forEach((logDoc) => batch.delete(logDoc.ref));
       
       await batch.commit();
+      console.log(`[AppContext] deleteEvent: Successfully deleted event ${eventId} and its logs.`);
       dispatch({ type: 'DELETE_EVENT_SUCCESS', payload: eventId });
       return true;
     } catch (error) {
@@ -415,6 +451,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const formattedDate = format(date, 'yyyy-MM-dd');
     const logIdPrefix = state.selectedEvent.id; 
     const logId = `${logIdPrefix}_${formattedDate}`; 
+    console.log(`[AppContext] upsertLog: Saving log with ID '${logId}' for date '${formattedDate}' and event '${state.selectedEvent.id}'. Entry:`, logEntry);
 
     try {
       const logDocRef = doc(db, FIRESTORE_LOGS_COLLECTION_ID, logId);
@@ -437,6 +474,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       };
       
       await setDoc(logDocRef, fullLogData, { merge: true });
+      console.log(`[AppContext] upsertLog: Successfully saved log '${logId}'.`);
       dispatch({ type: 'UPSERT_LOG', payload: { date: formattedDate, log: fullLogData } });
     } catch (error: any) {
       console.error(`[AppContext] Failed to save log '${logId}' to Firestore:`, error.message, error.stack);
@@ -444,11 +482,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [state.selectedEvent]);
 
   const getLog = useCallback((date: Date): DailyLog | undefined => {
-    if (!state.selectedEvent) return undefined;
-    return state.logs[format(date, 'yyyy-MM-dd')];
+    if (!state.selectedEvent) {
+      // console.log('[AppContext] getLog: No selected event, returning undefined.');
+      return undefined;
+    }
+    const formattedDate = format(date, 'yyyy-MM-dd');
+    // console.log(`[AppContext] getLog: Getting log for date '${formattedDate}'. Log found:`, state.logs[formattedDate]);
+    return state.logs[formattedDate];
   }, [state.logs, state.selectedEvent]);
 
   const isEventSelected = useCallback((): boolean => {
+    // console.log(`[AppContext] isEventSelected: Selected event is ${state.selectedEvent ? state.selectedEvent.id : 'null'}`);
     return !!state.selectedEvent;
   }, [state.selectedEvent]);
 
@@ -498,10 +542,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     
     console.log(`[AppContext] Attempting login. Provided code: "${enteredCode}". Configured editorCode: "${editorCode}", partnerCode: "${partnerCode}"`);
 
-    if (!editorCode && !partnerCode) {
-      console.warn("[AppContext] Editor/Partner codes not found in loaded global config. Check Firestore 'config/appSettings'. This could be due to the document not existing, or the fields being missing/null.");
+    if (!editorCode && !partnerCode && (editorCode !== null || partnerCode !== null)) { // Allow if explicitly set to empty strings by user, but not if simply undefined
+      console.warn("[AppContext] Editor/Partner codes not found in loaded global config or are null. Check Firestore 'config/appSettings'. This could be due to the document not existing, or the fields being missing/null.");
       return false;
     }
+    
 
     if (editorCode && enteredCode === editorCode) {
       setUserRole('editor');
@@ -511,6 +556,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setUserRole('partner');
       return true;
     }
+    console.log(`[AppContext] Login attempt failed for code: "${enteredCode}"`);
     return false;
   }, [state.isInitialized, state.globalConfig, setUserRole]);
 
