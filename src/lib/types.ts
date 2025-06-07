@@ -3,7 +3,7 @@ export interface DailyLog {
   editorNotes?: string[];
   spotifyLink: string;
   songTitle?: string;
-  songArtist?: string;
+  // songArtist?: string; // Removed as per user request
   partnerNotes?: string[];
 }
 

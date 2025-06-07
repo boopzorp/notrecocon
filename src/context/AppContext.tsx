@@ -140,7 +140,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         editorNotes: logData.editorNotes || [],
         spotifyLink: typeof logData.spotifyLink === 'string' ? logData.spotifyLink : "",
         songTitle: typeof logData.songTitle === 'string' ? logData.songTitle : "",
-        songArtist: typeof logData.songArtist === 'string' ? logData.songArtist : "",
+        // songArtist: typeof logData.songArtist === 'string' ? logData.songArtist : "", // Removed
         partnerNotes: logData.partnerNotes || [],
       };
       await setDoc(logDocRef, dataToSave);

@@ -1,9 +1,9 @@
 
 'use server';
 /**
- * @fileOverview Provides a Genkit flow to extract song details (title and artist) from a Spotify track URL.
+ * @fileOverview Provides a Genkit flow to extract song details (title) from a Spotify track URL.
  *
- * - extractSongDetails - A function that takes a Spotify URL and returns the song title and artist.
+ * - extractSongDetails - A function that takes a Spotify URL and returns the song title.
  * - ExtractSongDetailsInput - The input type for the extractSongDetails function.
  * - ExtractSongDetailsOutput - The return type for the extractSongDetails function.
  */
@@ -18,7 +18,6 @@ export type ExtractSongDetailsInput = z.infer<typeof ExtractSongDetailsInputSche
 
 const ExtractSongDetailsOutputSchema = z.object({
   songTitle: z.string().describe('The title of the song.'),
-  songArtist: z.string().describe('The artist(s) of the song.'),
 });
 export type ExtractSongDetailsOutput = z.infer<typeof ExtractSongDetailsOutputSchema>;
 
@@ -55,12 +54,13 @@ const extractSongDetailsFlow = ai.defineFlow(
       responseDataText = await response.text(); 
 
       console.log(`Spotify oEmbed response status: ${response.status}`);
-      // Log all headers from Spotify's response
       const responseHeaders: Record<string, string> = {};
       response.headers.forEach((value, key) => {
         responseHeaders[key] = value;
       });
       console.log('Spotify oEmbed response headers:', JSON.stringify(responseHeaders, null, 2));
+      console.log('Raw Response Text from Spotify:', responseDataText);
+
 
       if (!response.ok) {
         console.error(`Spotify oEmbed request failed with status ${response.status} ${response.statusText}. URL: ${oEmbedUrl}. Original Input URL: ${input.spotifyUrl}. Cleaned URL: ${cleanedSpotifyUrl}. Response Body: ${responseDataText}`);
@@ -83,21 +83,20 @@ const extractSongDetailsFlow = ai.defineFlow(
       console.log('Successfully parsed Spotify oEmbed data. URL:', oEmbedUrl, 'Cleaned URL:', cleanedSpotifyUrl, 'Parsed Data:', JSON.stringify(data, null, 2));
 
       const songTitle = data.title;
-      const songArtist = data.author_name; 
 
-      if (!songTitle || !songArtist || typeof songTitle !== 'string' || typeof songArtist !== 'string' || songTitle.trim() === '' || songArtist.trim() === '') {
+      if (!songTitle || typeof songTitle !== 'string' || songTitle.trim() === '') {
         console.error(
-          'Spotify oEmbed response missing title or artist, or they are not non-empty strings. This is the error triggering the UI message.',
+          'Spotify oEmbed response missing title, or it is not a non-empty string. This is the error triggering the UI message.',
           'Keys in parsed data:', Object.keys(data),
           'Original Input URL:', input.spotifyUrl, 
           'Cleaned URL for oEmbed:', cleanedSpotifyUrl, 
           'Raw Response Text from Spotify:', responseDataText, 
-          'Parsed Data (check "title" and "author_name" fields):', JSON.stringify(data, null, 2)
+          'Parsed Data (check "title" field):', JSON.stringify(data, null, 2)
         );
-        throw new Error('Could not extract title or artist from Spotify response. Please ensure the link is a valid Spotify track URL.');
+        throw new Error('Could not extract title from Spotify response. Please ensure the link is a valid Spotify track/episode URL.');
       }
 
-      return { songTitle, songArtist };
+      return { songTitle };
     } catch (error: any) {
       console.error('Error within extractSongDetailsFlow. Original Input URL:', input.spotifyUrl, 'Cleaned URL for oEmbed:', cleanedSpotifyUrl, 'oEmbed URL:', oEmbedUrl, 'Raw Response Text (if available):', responseDataText, 'Caught Error:', error);
       

@@ -27,7 +27,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   const [newEditorNoteText, setNewEditorNoteText] = useState('');
   const [spotifyLink, setSpotifyLink] = useState('');
   const [songTitle, setSongTitle] = useState('');
-  const [songArtist, setSongArtist] = useState('');
+  // const [songArtist, setSongArtist] = useState(''); // Removed
   const [newPartnerNoteText, setNewPartnerNoteText] = useState('');
 
   const [suggestedReplies, setSuggestedReplies] = useState<string[]>([]);
@@ -43,7 +43,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     setNewEditorNoteText('');
     setSpotifyLink(log?.spotifyLink || '');
     setSongTitle(log?.songTitle || '');
-    setSongArtist(log?.songArtist || '');
+    // setSongArtist(log?.songArtist || ''); // Removed
     setNewPartnerNoteText('');
     setSuggestedReplies([]);
     setErrorSuggestions(null);
@@ -51,18 +51,19 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     setIsFetchingSongDetails(false);
   }, [log, selectedDate]);
 
+
   const handleEditorSaveNewNote = (e: FormEvent) => {
     e.preventDefault();
 
-    const currentLogSnapshot: DailyLog = log
+     const currentLogSnapshot: DailyLog = log
       ? {
           editorNotes: Array.isArray(log.editorNotes) ? log.editorNotes : [],
           spotifyLink: typeof log.spotifyLink === 'string' ? log.spotifyLink : '',
           songTitle: typeof log.songTitle === 'string' ? log.songTitle : '',
-          songArtist: typeof log.songArtist === 'string' ? log.songArtist : '',
+          // songArtist: typeof log.songArtist === 'string' ? log.songArtist : '', // Removed
           partnerNotes: Array.isArray(log.partnerNotes) ? log.partnerNotes : []
         }
-      : { editorNotes: [], spotifyLink: '', songTitle: '', songArtist: '', partnerNotes: [] };
+      : { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] }; // Removed songArtist
     
     const updatedLog: DailyLog = {
       editorNotes: newEditorNoteText.trim()
@@ -70,11 +71,12 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
         : (currentLogSnapshot.editorNotes || []),
       spotifyLink: spotifyLink.trim(),
       songTitle: songTitle.trim(),
-      songArtist: songArtist.trim(),
+      // songArtist: songArtist.trim(), // Removed
       partnerNotes: currentLogSnapshot.partnerNotes || [],
     };
     onSave(selectedDate, updatedLog);
     setNewEditorNoteText('');
+    // Note: songTitle and spotifyLink state remain as they might have been auto-filled or manually entered
   };
   
   const handlePartnerSaveNewNote = (e: FormEvent) => {
@@ -86,10 +88,10 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
           editorNotes: Array.isArray(log.editorNotes) ? log.editorNotes : [],
           spotifyLink: typeof log.spotifyLink === 'string' ? log.spotifyLink : '',
           songTitle: typeof log.songTitle === 'string' ? log.songTitle : '',
-          songArtist: typeof log.songArtist === 'string' ? log.songArtist : '',
+          // songArtist: typeof log.songArtist === 'string' ? log.songArtist : '', // Removed
           partnerNotes: Array.isArray(log.partnerNotes) ? log.partnerNotes : []
         }
-      : { editorNotes: [], spotifyLink: '', songTitle: '', songArtist: '', partnerNotes: [] };
+      : { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] }; // Removed songArtist
 
 
     const updatedLog: DailyLog = {
@@ -106,7 +108,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
       setNewEditorNoteText('');
       setSpotifyLink('');
       setSongTitle('');
-      setSongArtist('');
+      // setSongArtist(''); // Removed
       setNewPartnerNoteText('');
     }
   };
@@ -117,14 +119,14 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
           editorNotes: Array.isArray(log.editorNotes) ? log.editorNotes : [],
           spotifyLink: typeof log.spotifyLink === 'string' ? log.spotifyLink : '',
           songTitle: typeof log.songTitle === 'string' ? log.songTitle : '',
-          songArtist: typeof log.songArtist === 'string' ? log.songArtist : '',
+          // songArtist: typeof log.songArtist === 'string' ? log.songArtist : '', // Removed
           partnerNotes: Array.isArray(log.partnerNotes) ? log.partnerNotes : []
         }
-      : { editorNotes: [], spotifyLink: '', songTitle: '', songArtist: '', partnerNotes: [] };
+      : { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] }; // Removed songArtist
 
     const currentPartnerNotes = currentLogSnapshot.partnerNotes;
 
-    if (indexToDelete < 0 || indexToDelete >= currentPartnerNotes.length) {
+    if (!currentPartnerNotes || indexToDelete < 0 || indexToDelete >= currentPartnerNotes.length) {
       console.error("Invalid index for deleting partner note.");
       toast({
         title: "Error",
@@ -171,7 +173,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   const isValidSpotifyTrackUrl = (url: string): boolean => {
     try {
       const parsedUrl = new URL(url);
-      return parsedUrl.hostname === 'open.spotify.com' && parsedUrl.pathname.startsWith('/track/');
+      return parsedUrl.hostname === 'open.spotify.com' && (parsedUrl.pathname.startsWith('/track/') || parsedUrl.pathname.startsWith('/episode/'));
     } catch (e) {
       return false;
     }
@@ -179,7 +181,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
 
   const handleFetchSongDetailsFromLink = async () => {
     if (!spotifyLink || !isValidSpotifyTrackUrl(spotifyLink)) {
-      setSongDetailsError("Please enter a valid Spotify track URL.");
+      setSongDetailsError("Please enter a valid Spotify track or episode URL.");
       return;
     }
     setIsFetchingSongDetails(true);
@@ -187,10 +189,10 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     try {
       const result: ExtractSongDetailsOutput = await extractSongDetails({ spotifyUrl: spotifyLink });
       setSongTitle(result.songTitle);
-      setSongArtist(result.songArtist);
+      // setSongArtist(result.songArtist); // Removed
       toast({
         title: "Song Details Fetched!",
-        description: `Found: ${result.songTitle} by ${result.songArtist}`,
+        description: `Found title: ${result.songTitle}`,
       });
     } catch (error: any) {
       console.error("Error fetching song details:", error);
@@ -235,7 +237,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               <Label className="text-muted-foreground font-semibold flex items-center"><Music2 className="w-4 h-4 mr-2 text-accent"/>Their Song for the Day:</Label>
               <Button variant="link" asChild className="p-0 h-auto">
                 <a href={log.spotifyLink} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline truncate block text-left">
-                  {log.songTitle && log.songArtist ? `${log.songTitle} - ${log.songArtist}` : log.spotifyLink}
+                  {log.songTitle ? log.songTitle : log.spotifyLink}
                 </a>
               </Button>
             </div>
@@ -312,7 +314,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="spotifyLink" className="flex items-center font-semibold"><Music2 className="w-4 h-4 mr-2 text-accent"/>Spotify Song Link</Label>
+            <Label htmlFor="spotifyLink" className="flex items-center font-semibold"><Music2 className="w-4 h-4 mr-2 text-accent"/>Spotify Song/Episode Link</Label>
             <div className="flex items-center gap-2">
               <Input
                 id="spotifyLink"
@@ -320,9 +322,9 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
                 value={spotifyLink}
                 onChange={(e) => {
                   setSpotifyLink(e.target.value);
-                  setSongDetailsError(null); // Clear error when user types
+                  setSongDetailsError(null); 
                 }}
-                onBlur={handleFetchSongDetailsFromLink} // Fetch on blur
+                onBlur={handleFetchSongDetailsFromLink} 
                 placeholder="https://open.spotify.com/track/..."
                 className="flex-grow"
               />
@@ -341,7 +343,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="songTitle" className="flex items-center font-semibold"><Music2 className="w-4 h-4 mr-2 text-accent"/>Song Title</Label>
+            <Label htmlFor="songTitle" className="flex items-center font-semibold"><Music2 className="w-4 h-4 mr-2 text-accent"/>Song/Episode Title</Label>
             <Input
               id="songTitle"
               type="text"
@@ -350,18 +352,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               placeholder="e.g., Sunflower (auto-filled from link)"
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="songArtist" className="flex items-center font-semibold"><PenLine className="w-4 h-4 mr-2 text-accent"/>Song Artist</Label>
-            <Input
-              id="songArtist"
-              type="text"
-              value={songArtist}
-              onChange={(e) => setSongArtist(e.target.value)}
-              placeholder="e.g., Post Malone, Swae Lee (auto-filled from link)"
-            />
-          </div>
-
-
+          
           {log?.partnerNotes && log.partnerNotes.length > 0 && (
             <div className="space-y-2 pt-4 border-t">
                 <Label className="text-muted-foreground font-semibold flex items-center"><Gift className="w-5 h-5 mr-2 text-accent"/>Notes From Your Partner:</Label>
@@ -400,7 +391,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
 
         </CardContent>
         <CardFooter className="flex flex-col gap-3">
-          {onDelete && (log?.editorNotes?.length || log?.spotifyLink || log?.partnerNotes?.length || log?.songTitle || log?.songArtist) && (
+          {onDelete && (log?.editorNotes?.length || log?.spotifyLink || log?.partnerNotes?.length || log?.songTitle ) && (
              <Button type="button" variant="destructive" onClick={handleDeleteEntireEntry} className="w-full">
                 <Trash2 className="w-4 h-4 mr-2"/> Delete Entire Day's Entry
               </Button>
@@ -413,4 +404,3 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     </Card>
   );
 }
-
