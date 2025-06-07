@@ -71,7 +71,9 @@ function appReducer(state: AppState, action: Action): AppState {
         },
       };
     case 'RESET_DATA_STATE':
-      return { ...initialState, isInitialized: true, userRole: 'editor' }; // keep userRole from localStorage if possible
+      // When resetting, try to preserve userRole if it was loaded, otherwise default
+      const currentRole = state.isInitialized ? state.userRole : (localStorage.getItem(USER_ROLE_LOCAL_STORAGE_KEY) as 'editor' | 'partner' || 'editor');
+      return { ...initialState, isInitialized: true, userRole: currentRole };
     case 'SET_USER_ROLE':
       return { ...state, userRole: action.payload };
     default:
@@ -104,7 +106,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         dispatch({ type: 'INITIALIZE_APP', payload: { settings: appSettings, logs: fetchedLogs, userRole: storedUserRole || 'editor' } });
       } catch (error) {
         console.error("Failed to load data from Firestore or localStorage", error);
-        // Initialize with defaults if Firestore fails
         const storedUserRole = localStorage.getItem(USER_ROLE_LOCAL_STORAGE_KEY) as 'editor' | 'partner' | null;
         dispatch({ type: 'INITIALIZE_APP', payload: { settings: {}, logs: {}, userRole: storedUserRole || 'editor' } });
       }
@@ -113,7 +114,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, []);
   
   useEffect(() => {
-    // Persist userRole to localStorage whenever it changes in state
     if (state.isInitialized) {
       try {
         localStorage.setItem(USER_ROLE_LOCAL_STORAGE_KEY, state.userRole);
@@ -133,19 +133,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       dispatch({ type: 'SET_INTERNSHIP_DATES', payload: { startDate, endDate } });
     } catch (error) {
       console.error("Failed to save internship dates to Firestore:", error);
-      // Optionally, show a toast to the user
     }
   }, []);
 
-  const upsertLog = useCallback(async (date: Date, log: DailyLog) => {
+  const upsertLog = useCallback(async (date: Date, logData: DailyLog) => {
     const formattedDate = format(date, 'yyyy-MM-dd');
     try {
       const logDocRef = doc(db, FIRESTORE_LOGS_COLLECTION_ID, formattedDate);
-      await setDoc(logDocRef, log); // Overwrites or creates the document
-      dispatch({ type: 'UPSERT_LOG', payload: { date: formattedDate, log } });
+      // Ensure all fields are present and correctly typed for Firestore
+      const dataToSave: DailyLog = {
+        editorNotes: logData.editorNotes || [],
+        spotifyLink: typeof logData.spotifyLink === 'string' ? logData.spotifyLink : "", // Ensure spotifyLink is always a string
+        partnerNotes: logData.partnerNotes || [],
+      };
+      await setDoc(logDocRef, dataToSave); 
+      dispatch({ type: 'UPSERT_LOG', payload: { date: formattedDate, log: dataToSave } });
     } catch (error) {
       console.error("Failed to save log to Firestore:", error);
-      // Optionally, show a toast to the user
     }
   }, []);
 
@@ -160,11 +164,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   
   const resetData = useCallback(async () => {
     try {
-      // Delete settings document
       const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
       await deleteDoc(settingsDocRef);
 
-      // Delete all logs in dailyLogs collection
       const logsCollectionRef = collection(db, FIRESTORE_LOGS_COLLECTION_ID);
       const logsSnapshot = await getDocs(logsCollectionRef);
       const batch = writeBatch(db);
@@ -173,19 +175,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       });
       await batch.commit();
       
-      // Clear user role from localStorage
       localStorage.removeItem(USER_ROLE_LOCAL_STORAGE_KEY);
 
       dispatch({ type: 'RESET_DATA_STATE' });
     } catch (error) {
       console.error("Failed to reset data in Firestore:", error);
-      // Optionally, show a toast to the user
     }
   }, []);
 
   const setUserRole = useCallback((role: 'editor' | 'partner') => {
     dispatch({ type: 'SET_USER_ROLE', payload: role });
-    // User role is saved to localStorage by the useEffect hook listening to state.userRole
   }, []);
 
   return (
