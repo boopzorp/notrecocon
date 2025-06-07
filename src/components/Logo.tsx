@@ -4,12 +4,12 @@ export function Logo() {
   return (
     <div className="flex items-center space-x-2">
       <Image
-        src="https://placehold.co/32x32.png" 
+        src="/sunflower.png" 
         alt="Notre Cocon Heart Logo" 
         width={32} 
         height={32}
         data-ai-hint="heart logo"
-        className="h-8 w-8" 
+        className="h-12 w-12" 
       />
       <h1 className="font-headline text-4xl" style={{ color: 'hsl(var(--accent))' }}>
         Notre Cocon
