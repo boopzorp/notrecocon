@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -29,6 +30,7 @@ export async function generateSuggestedReplies(input: SuggestedRepliesInput): Pr
 
 const prompt = ai.definePrompt({
   name: 'suggestedRepliesPrompt',
+  model: 'googleai/gemini-2.0-flash', // Specify the model for this prompt
   input: {schema: SuggestedRepliesInputSchema},
   output: {schema: SuggestedRepliesOutputSchema},
   prompt: `You are a relationship expert specializing in empathetic communication.
@@ -52,3 +54,4 @@ const generateSuggestedRepliesFlow = ai.defineFlow(
     return output!;
   }
 );
+
