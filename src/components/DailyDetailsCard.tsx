@@ -42,20 +42,18 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
 
   const handleEditorSaveNewNote = (e: FormEvent) => {
     e.preventDefault();
-    if (!newEditorNoteText.trim() && !spotifyLink.trim() && (!log?.editorNotes || log.editorNotes.length === 0) && !log?.spotifyLink) { 
-      // Allow saving if only spotify link is changed or if it's the first note/link
-    }
-
+    // No validation needed here to allow saving just a link or just a note
+    
     const updatedLog: DailyLog = {
       editorNotes: newEditorNoteText.trim() 
         ? [...(log?.editorNotes || []), newEditorNoteText] 
         : (log?.editorNotes || []),
-      spotifyLink: spotifyLink.trim(), // Ensure spotifyLink is trimmed
+      spotifyLink: spotifyLink.trim(),
       partnerNotes: log?.partnerNotes || [],
     };
     onSave(selectedDate, updatedLog);
     setNewEditorNoteText(''); 
-    // Toast handled by parent EditorPage's onSave
+    // Toast handled by parent EditorPage
   };
   
   const handlePartnerSaveNewNote = (e: FormEvent) => {
@@ -69,12 +67,12 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     };
     onSave(selectedDate, updatedLog);
     setNewPartnerNoteText(''); 
-    // Toast handled by parent ReaderPage's onSave
+    // Toast handled by parent ReaderPage
   };
 
   const handleDeleteEntireEntry = () => {
     if (onDelete) {
-      onDelete(selectedDate); // This calls the onDelete from EditorPage props
+      onDelete(selectedDate); 
       setNewEditorNoteText('');
       setSpotifyLink('');
       setNewPartnerNoteText(''); 
@@ -82,12 +80,19 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   };
 
   const handleDeleteEditorNote = (indexToDelete: number) => {
-    const updatedEditorNotes = (log?.editorNotes || []).filter((_, index) => index !== indexToDelete);
+    const currentEditorNotes = log?.editorNotes || [];
+    if (indexToDelete < 0 || indexToDelete >= currentEditorNotes.length) {
+      console.error("Invalid index for deleting editor note.");
+      return;
+    }
+    const updatedEditorNotes = currentEditorNotes.filter((_, index) => index !== indexToDelete);
+    
+    // Explicitly construct the log with the updated editorNotes
+    // and current values for other fields from the editor's perspective.
     const updatedLog: DailyLog = {
-      ...log,
       editorNotes: updatedEditorNotes,
-      spotifyLink: spotifyLink, // ensure current spotify link is preserved
-      partnerNotes: log?.partnerNotes || [],
+      spotifyLink: spotifyLink, // Use the current value from the spotifyLink input state
+      partnerNotes: log?.partnerNotes || [], // Preserve existing partner notes
     };
     onSave(selectedDate, updatedLog);
     toast({
@@ -98,11 +103,18 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   };
 
   const handleDeletePartnerNote = (indexToDelete: number) => {
-    const updatedPartnerNotes = (log?.partnerNotes || []).filter((_, index) => index !== indexToDelete);
+    const currentPartnerNotes = log?.partnerNotes || [];
+    if (indexToDelete < 0 || indexToDelete >= currentPartnerNotes.length) {
+      console.error("Invalid index for deleting partner note.");
+      return;
+    }
+    const updatedPartnerNotes = currentPartnerNotes.filter((_, index) => index !== indexToDelete);
+
+    // Explicitly construct the log with the updated partnerNotes
+    // and current values for other fields from the log prop.
     const updatedLog: DailyLog = {
-      ...log,
-      editorNotes: log?.editorNotes || [],
-      spotifyLink: log?.spotifyLink || '',
+      editorNotes: log?.editorNotes || [], // Preserve existing editor notes
+      spotifyLink: log?.spotifyLink || '',   // Preserve existing spotify link
       partnerNotes: updatedPartnerNotes,
     };
     onSave(selectedDate, updatedLog);
@@ -305,3 +317,4 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     </Card>
   );
 }
+
