@@ -5,7 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
   title: 'Notre Cocon',
-  description: 'A special app for my faraway love.',
+  description: 'A safe space for me and my beloved.',
 };
 
 export default function RootLayout({
