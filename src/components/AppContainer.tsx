@@ -15,9 +15,9 @@ export function AppContainer({ children, showHomeButton = false }: AppContainerP
       <header className="w-full max-w-4xl mb-8 flex justify-between items-center">
         <Logo />
         {showHomeButton && (
-          <Button variant="ghost" asChild>
+          <Button variant="ghost" asChild className="text-primary">
             <Link href="/" aria-label="Go to homepage">
-              <Home className="w-6 h-6 text-primary" />
+              <Home className="w-6 h-6" />
             </Link>
           </Button>
         )}
