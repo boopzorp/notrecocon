@@ -12,12 +12,13 @@ import type { DailyLog } from "@/lib/types";
 import { Music2, Save, BookOpen, Lightbulb, Trash2, PenLine, Gift, MessageSquarePlus, MessagesSquare, PlusCircle } from 'lucide-react';
 import { generateSuggestedReplies, type SuggestedRepliesOutput } from '@/ai/flows/suggested-replies';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
+import { useToast } from '@/hooks/use-toast';
 
 interface DailyDetailsCardProps {
   selectedDate: Date;
   log: DailyLog | undefined;
   onSave: (date: Date, log: DailyLog) => void;
-  onDelete?: (date: Date) => void;
+  onDelete?: (date: Date) => void; // For deleting entire day's entry
   mode: 'editor' | 'reader';
 }
 
@@ -29,11 +30,12 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   const [suggestedReplies, setSuggestedReplies] = useState<string[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [errorSuggestions, setErrorSuggestions] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
-    setNewEditorNoteText(''); // Clear for new editor note entry
+    setNewEditorNoteText(''); 
     setSpotifyLink(log?.spotifyLink || '');
-    setNewPartnerNoteText(''); // Always clear for new partner note entry
+    setNewPartnerNoteText(''); 
     setSuggestedReplies([]); 
     setErrorSuggestions(null);
   }, [log, selectedDate]);
@@ -41,19 +43,19 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   const handleEditorSaveNewNote = (e: FormEvent) => {
     e.preventDefault();
     if (!newEditorNoteText.trim() && !spotifyLink.trim() && (!log?.editorNotes || log.editorNotes.length === 0) && !log?.spotifyLink) { 
-      // Allow saving just the spotify link even if note is empty, or if there are existing notes.
-      // Only prevent save if everything is empty.
+      // Allow saving if only spotify link is changed or if it's the first note/link
     }
 
     const updatedLog: DailyLog = {
       editorNotes: newEditorNoteText.trim() 
         ? [...(log?.editorNotes || []), newEditorNoteText] 
         : (log?.editorNotes || []),
-      spotifyLink,
+      spotifyLink: spotifyLink.trim(), // Ensure spotifyLink is trimmed
       partnerNotes: log?.partnerNotes || [],
     };
     onSave(selectedDate, updatedLog);
-    setNewEditorNoteText(''); // Clear input after saving
+    setNewEditorNoteText(''); 
+    // Toast handled by parent EditorPage's onSave
   };
   
   const handlePartnerSaveNewNote = (e: FormEvent) => {
@@ -67,16 +69,50 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     };
     onSave(selectedDate, updatedLog);
     setNewPartnerNoteText(''); 
+    // Toast handled by parent ReaderPage's onSave
   };
 
-  const handleDelete = () => {
+  const handleDeleteEntireEntry = () => {
     if (onDelete) {
-      onDelete(selectedDate);
+      onDelete(selectedDate); // This calls the onDelete from EditorPage props
       setNewEditorNoteText('');
       setSpotifyLink('');
       setNewPartnerNoteText(''); 
     }
   };
+
+  const handleDeleteEditorNote = (indexToDelete: number) => {
+    const updatedEditorNotes = (log?.editorNotes || []).filter((_, index) => index !== indexToDelete);
+    const updatedLog: DailyLog = {
+      ...log,
+      editorNotes: updatedEditorNotes,
+      spotifyLink: spotifyLink, // ensure current spotify link is preserved
+      partnerNotes: log?.partnerNotes || [],
+    };
+    onSave(selectedDate, updatedLog);
+    toast({
+      title: "Note Deleted",
+      description: "Your note has been successfully deleted.",
+      variant: "destructive"
+    });
+  };
+
+  const handleDeletePartnerNote = (indexToDelete: number) => {
+    const updatedPartnerNotes = (log?.partnerNotes || []).filter((_, index) => index !== indexToDelete);
+    const updatedLog: DailyLog = {
+      ...log,
+      editorNotes: log?.editorNotes || [],
+      spotifyLink: log?.spotifyLink || '',
+      partnerNotes: updatedPartnerNotes,
+    };
+    onSave(selectedDate, updatedLog);
+    toast({
+      title: "Note Deleted",
+      description: "Your note has been successfully deleted.",
+      variant: "destructive"
+    });
+  };
+
 
   const handleGetSuggestions = async () => {
     const noteToAnalyze = mode === 'editor' ? newEditorNoteText : (log?.editorNotes?.[(log.editorNotes.length || 0) -1] || "");
@@ -139,8 +175,12 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               <Label className="font-semibold flex items-center"><MessagesSquare className="w-5 h-5 mr-2 text-accent"/>Your Notes for Them:</Label>
               <ul className="space-y-2 mt-2">
                 {log.partnerNotes.map((pNote, index) => (
-                  <li key={`partner-${index}`} className="whitespace-pre-wrap text-sm p-3 border rounded-md bg-background shadow-sm">
-                    {pNote}
+                  <li key={`partner-${index}`} className="flex justify-between items-start whitespace-pre-wrap text-sm p-3 border rounded-md bg-background shadow-sm">
+                    <span>{pNote}</span>
+                    <Button variant="ghost" size="icon" onClick={() => handleDeletePartnerNote(index)} className="h-6 w-6 p-0 ml-2 shrink-0 text-muted-foreground hover:text-destructive">
+                      <Trash2 className="w-4 h-4" />
+                      <span className="sr-only">Delete this note</span>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -182,8 +222,12 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               <Label className="font-semibold flex items-center"><BookOpen className="w-4 h-4 mr-2 text-accent"/>Your Saved Notes:</Label>
               <ul className="space-y-2 mt-1">
                 {log.editorNotes.map((eNote, index) => (
-                  <li key={`editor-${index}`} className="whitespace-pre-wrap text-sm p-3 border rounded-md bg-secondary/50">
-                    {eNote}
+                  <li key={`editor-${index}`} className="flex justify-between items-start whitespace-pre-wrap text-sm p-3 border rounded-md bg-secondary/50">
+                     <span>{eNote}</span>
+                     <Button variant="ghost" size="icon" onClick={() => handleDeleteEditorNote(index)} className="h-6 w-6 p-0 ml-2 shrink-0 text-muted-foreground hover:text-destructive">
+                      <Trash2 className="w-4 h-4" />
+                       <span className="sr-only">Delete this note</span>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -249,7 +293,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
         </CardContent>
         <CardFooter className="flex flex-col sm:flex-row justify-between gap-2">
           {onDelete && (log?.editorNotes?.length || log?.spotifyLink || log?.partnerNotes?.length) && ( 
-             <Button type="button" variant="destructive" onClick={handleDelete} className="w-full sm:w-auto">
+             <Button type="button" variant="destructive" onClick={handleDeleteEntireEntry} className="w-full sm:w-auto">
                 <Trash2 className="w-4 h-4 mr-2"/> Delete Entire Day's Entry
               </Button>
           )}
@@ -261,3 +305,5 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     </Card>
   );
 }
+
+    
