@@ -34,29 +34,36 @@ const extractSongDetailsFlow = ai.defineFlow(
   },
   async (input) => {
     const oEmbedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(input.spotifyUrl)}`;
+    let responseDataText = ''; // To store response text for logging
 
     try {
       const response = await fetch(oEmbedUrl);
+      responseDataText = await response.text(); // Get text for logging regardless of status
+
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Spotify oEmbed request failed with status ${response.status}: ${errorText}`);
+        console.error(`Spotify oEmbed request failed with status ${response.status}. URL: ${oEmbedUrl}. Response: ${responseDataText}`);
         throw new Error(`Failed to fetch song details from Spotify. Status: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = JSON.parse(responseDataText); // Parse the text we already fetched
 
       const songTitle = data.title;
       const songArtist = data.author_name; // Spotify oEmbed uses author_name for artist
 
       if (!songTitle || !songArtist) {
-        console.error('Spotify oEmbed response missing title or author_name:', data);
-        throw new Error('Could not extract title or artist from Spotify response.');
+        console.error('Spotify oEmbed response missing title or author_name. URL:', input.spotifyUrl, 'Raw Response:', responseDataText, 'Parsed Data:', JSON.stringify(data, null, 2));
+        throw new Error('Could not extract title or artist from Spotify response. Please ensure the link is a valid Spotify track URL.');
       }
 
       return { songTitle, songArtist };
     } catch (error: any) {
-      console.error('Error in extractSongDetailsFlow:', error);
-      throw new Error(error.message || 'An unexpected error occurred while fetching song details.');
+      console.error('Error in extractSongDetailsFlow. URL:', input.spotifyUrl, 'oEmbed URL:', oEmbedUrl, 'Raw Response Text (if available):', responseDataText, 'Error:', error);
+      // Re-throw a generic message or the specific one from above.
+      if (error.message.startsWith('Could not extract') || error.message.startsWith('Failed to fetch')) {
+        throw error;
+      }
+      throw new Error('An unexpected error occurred while fetching song details.');
     }
   }
 );
+
