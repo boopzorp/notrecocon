@@ -24,7 +24,7 @@ interface DailyDetailsCardProps {
   mode: 'editor' | 'reader';
 }
 
-const MOOD_OPTIONS = ['😊', '😢', '😠', '😴', '🎉', '🤔', '💖', '🙂', '😟'] as const;
+const MOOD_OPTIONS = ['😊', '😢', '😠', '😴', '🎉', '😐', '💖', '🙂', '😟'] as const;
 type MoodEmoji = typeof MOOD_OPTIONS[number];
 
 
@@ -472,3 +472,4 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     </Card>
   );
 }
+
