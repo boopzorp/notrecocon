@@ -53,7 +53,7 @@ export default function HomePage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <p className="text-foreground">
-              Choose your path below to continue our journey.
+              Beyond time, Beyond distance.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               {!isPartner && (
