@@ -82,10 +82,10 @@ function appReducer(state: AppState, action: Action): AppState {
     case 'RESET_DATA_STATE':
       return {
         ...initialState,
-        isInitialized: true,
-        userRole: null,
-        editorCode: state.editorCode,
-        partnerCode: state.partnerCode,
+        isInitialized: true, // Keep initialization status
+        userRole: null, // Reset user role
+        editorCode: state.editorCode, // Preserve loaded codes
+        partnerCode: state.partnerCode, // Preserve loaded codes
       };
     case 'SET_USER_ROLE':
       return { ...state, userRole: action.payload };
@@ -100,7 +100,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        console.log(`[AppContext] Using Firebase Project ID: ${firebaseApp.options.projectId}`);
+        // console.log(`[AppContext] Using Firebase Project ID: ${firebaseApp.options.projectId}`); // Removed as per previous step
         const settingsDocPath = `${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}`;
         console.log(`[AppContext] Attempting to load settings from Firestore path: ${settingsDocPath}`);
 
@@ -180,9 +180,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         partnerNotes: logData.partnerNotes || [],
         promptForPartner: typeof logData.promptForPartner === 'string' ? logData.promptForPartner : "",
         promptForEditor: typeof logData.promptForEditor === 'string' ? logData.promptForEditor : "",
-        moods: { // Ensure moods object and its sub-properties are defined or explicitly null/undefined if allowed
-            editor: logData.moods?.editor || undefined,
-            partner: logData.moods?.partner || undefined,
+        moods: {
+            editor: logData.moods?.editor || null, // Changed from undefined to null
+            partner: logData.moods?.partner || null, // Changed from undefined to null
         }
       };
 
@@ -211,6 +211,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         batch.delete(logDoc.ref);
       });
       const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
+      // Only reset dates, keep codes
       await setDoc(settingsDocRef, { internshipStart: null, internshipEnd: null }, { merge: true });
 
       await batch.commit();
@@ -258,3 +259,4 @@ export const useAppContext = () => {
   }
   return context;
 };
+
