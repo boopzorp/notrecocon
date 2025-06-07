@@ -3,49 +3,61 @@
 
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useEffect, useReducer, useCallback } from 'react';
-import type { AppData, DailyLog, AppSettings, SongEntry } from '@/lib/types';
+import type { DailyLog, AppSettings, SongEntry, Event, AppGlobalConfig } from '@/lib/types';
 import { format, isValid, parseISO } from 'date-fns';
 import { db } from '@/lib/firebase';
-import { doc, getDoc, setDoc, collection, getDocs, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, getDocs, writeBatch, addDoc, query, where, deleteDoc } from 'firebase/firestore';
 
 const USER_ROLE_LOCAL_STORAGE_KEY = 'notreCoconUserRole';
 const FIRESTORE_SETTINGS_DOC_ID = 'appSettings';
 const FIRESTORE_LOGS_COLLECTION_ID = 'dailyLogs';
 const FIRESTORE_CONFIG_COLLECTION_ID = 'config';
+const FIRESTORE_EVENTS_COLLECTION_ID = 'events';
 
 
-interface AppState extends AppData {
+interface AppState {
   isInitialized: boolean;
   userRole: 'editor' | 'partner' | null;
-  editorCode: string | null;
-  partnerCode: string | null;
+  globalConfig: AppGlobalConfig;
+  events: Event[];
+  selectedEvent: Event | null;
+  logs: Record<string, DailyLog>; // Logs for the selectedEvent, keyed by 'YYYY-MM-DD'
+  isLoadingLogs: boolean;
+  isLoadingEvents: boolean;
 }
 
 type Action =
-  | { type: 'INITIALIZE_APP'; payload: { settings: Partial<AppSettings>; logs: Record<string, DailyLog>; userRole: 'editor' | 'partner' | null } }
-  | { type: 'SET_EVENT_DETAILS'; payload: { eventName: string | null; startDate: Date; endDate: Date } }
+  | { type: 'INITIALIZE_APP_START' }
+  | { type: 'INITIALIZE_APP_SUCCESS'; payload: { globalConfig: AppGlobalConfig; events: Event[]; userRole: 'editor' | 'partner' | null } }
+  | { type: 'INITIALIZE_APP_FAILURE' }
+  | { type: 'SELECT_EVENT'; payload: Event | null }
+  | { type: 'LOAD_LOGS_START' }
+  | { type: 'LOAD_LOGS_SUCCESS'; payload: Record<string, DailyLog> }
+  | { type: 'LOAD_LOGS_FAILURE' }
+  | { type: 'ADD_EVENT_SUCCESS'; payload: Event }
   | { type: 'UPSERT_LOG'; payload: { date: string; log: DailyLog } }
-  | { type: 'RESET_DATA_STATE' }
+  | { type: 'RESET_DATA_STATE_SUCCESS' }
   | { type: 'SET_USER_ROLE'; payload: 'editor' | 'partner' | null };
 
 const initialState: AppState = {
-  eventName: null,
-  eventStartDate: null,
-  eventEndDate: null,
-  logs: {},
   isInitialized: false,
   userRole: null,
-  editorCode: null,
-  partnerCode: null,
+  globalConfig: { editorCode: null, partnerCode: null },
+  events: [],
+  selectedEvent: null,
+  logs: {},
+  isLoadingLogs: false,
+  isLoadingEvents: false,
 };
 
 const AppContext = createContext<
   (AppState & {
-    setEventDetails: (eventName: string | null, startDate: Date, endDate: Date) => Promise<void>;
-    upsertLog: (date: Date, log: DailyLog) => Promise<void>;
+    selectEvent: (eventId: string | null) => void;
+    addEvent: (eventData: Omit<Event, 'id' | 'createdBy'>) => Promise<string | null>;
+    upsertLog: (date: Date, log: Omit<DailyLog, 'eventId'>) => Promise<void>;
     getLog: (date: Date) => DailyLog | undefined;
-    isConfigured: () => boolean;
-    resetData: () => Promise<void>;
+    isEventSelected: () => boolean;
+    resetAllAppData: () => Promise<void>;
     setUserRole: (role: 'editor' | 'partner' | null) => void;
     attemptLoginWithCode: (code: string) => boolean;
   }) | undefined
@@ -53,28 +65,38 @@ const AppContext = createContext<
 
 function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
-    case 'INITIALIZE_APP':
-      console.log("[AppContext] Initializing with settings:", action.payload.settings);
-      console.log("[AppContext] Initializing with userRole:", action.payload.userRole);
+    case 'INITIALIZE_APP_START':
+      return { ...state, isInitialized: false, isLoadingEvents: true };
+    case 'INITIALIZE_APP_SUCCESS':
       return {
         ...state,
-        eventName: action.payload.settings.eventName || null,
-        eventStartDate: action.payload.settings.eventStartDate || null,
-        eventEndDate: action.payload.settings.eventEndDate || null,
-        editorCode: action.payload.settings.editorCode || null,
-        partnerCode: action.payload.settings.partnerCode || null,
-        logs: action.payload.logs,
+        globalConfig: action.payload.globalConfig,
+        events: action.payload.events,
         userRole: action.payload.userRole,
         isInitialized: true,
+        isLoadingEvents: false,
       };
-    case 'SET_EVENT_DETAILS':
+    case 'INITIALIZE_APP_FAILURE':
+      return { ...state, isInitialized: true, isLoadingEvents: false }; // Still initialized, but with defaults/empty
+    case 'SELECT_EVENT':
       return {
         ...state,
-        eventName: action.payload.eventName,
-        eventStartDate: format(action.payload.startDate, 'yyyy-MM-dd'),
-        eventEndDate: format(action.payload.endDate, 'yyyy-MM-dd'),
+        selectedEvent: action.payload,
+        logs: {}, // Clear logs when event changes, will be re-fetched
+      };
+    case 'LOAD_LOGS_START':
+      return { ...state, isLoadingLogs: true };
+    case 'LOAD_LOGS_SUCCESS':
+      return { ...state, logs: action.payload, isLoadingLogs: false };
+    case 'LOAD_LOGS_FAILURE':
+      return { ...state, isLoadingLogs: false, logs: {} };
+    case 'ADD_EVENT_SUCCESS':
+      return {
+        ...state,
+        events: [...state.events, action.payload],
       };
     case 'UPSERT_LOG':
+      if (!state.selectedEvent) return state; // Should not happen if UI guards correctly
       return {
         ...state,
         logs: {
@@ -82,13 +104,15 @@ function appReducer(state: AppState, action: Action): AppState {
           [action.payload.date]: action.payload.log,
         },
       };
-    case 'RESET_DATA_STATE':
+    case 'RESET_DATA_STATE_SUCCESS':
       return {
-        ...initialState,
-        isInitialized: true, 
-        userRole: null, 
-        editorCode: state.editorCode, 
-        partnerCode: state.partnerCode, 
+        ...initialState, // Resets to initial, including clearing codes if they were part of initial
+        globalConfig: state.globalConfig, // Keep existing codes
+        userRole: state.userRole, // Keep existing role locally, will be cleared on logout if needed
+        isInitialized: true,
+        events: [],
+        selectedEvent: null,
+        logs: {},
       };
     case 'SET_USER_ROLE':
       return { ...state, userRole: action.payload };
@@ -101,157 +125,220 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(appReducer, initialState);
 
   useEffect(() => {
-    const loadData = async () => {
+    const loadInitialData = async () => {
+      dispatch({ type: 'INITIALIZE_APP_START' });
       try {
-        const settingsDocPath = `${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}`;
         const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
         const settingsDocSnap = await getDoc(settingsDocRef);
-
         let appSettings: Partial<AppSettings> = {};
         if (settingsDocSnap.exists()) {
           appSettings = settingsDocSnap.data() as AppSettings;
-          console.log("[AppContext] Loaded appSettings from Firestore:", appSettings);
         } else {
-          console.warn(`[AppContext] appSettings document does not exist at path: ${settingsDocPath}. Ensure it's created with editorCode and partnerCode.`);
+          console.warn(`[AppContext] appSettings document does not exist at path: ${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}. Using defaults.`);
         }
 
-        const logsCollectionRef = collection(db, FIRESTORE_LOGS_COLLECTION_ID);
-        const logsSnapshot = await getDocs(logsCollectionRef);
-        const fetchedLogs: Record<string, DailyLog> = {};
-        logsSnapshot.forEach((logDoc) => {
-          fetchedLogs[logDoc.id] = logDoc.data() as DailyLog;
-        });
+        const eventsCollectionRef = collection(db, FIRESTORE_EVENTS_COLLECTION_ID);
+        const eventsSnapshot = await getDocs(eventsCollectionRef);
+        const fetchedEvents: Event[] = eventsSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Event));
+        fetchedEvents.sort((a, b) => parseISO(b.startDate).getTime() - parseISO(a.startDate).getTime()); // Sort newest first
 
         const storedUserRole = localStorage.getItem(USER_ROLE_LOCAL_STORAGE_KEY) as 'editor' | 'partner' | null;
         
         dispatch({
-          type: 'INITIALIZE_APP',
+          type: 'INITIALIZE_APP_SUCCESS',
           payload: {
-            settings: appSettings,
-            logs: fetchedLogs,
-            userRole: storedUserRole
+            globalConfig: {
+              editorCode: appSettings.editorCode || null,
+              partnerCode: appSettings.partnerCode || null,
+            },
+            events: fetchedEvents,
+            userRole: storedUserRole,
           }
         });
       } catch (error) {
-        console.error("[AppContext] Failed to load data from Firestore or localStorage", error);
-        const storedUserRole = localStorage.getItem(USER_ROLE_LOCAL_STORAGE_KEY) as 'editor' | 'partner' | null;
-        dispatch({ type: 'INITIALIZE_APP', payload: { settings: {}, logs: {}, userRole: storedUserRole } });
+        console.error("[AppContext] Failed to load initial data:", error);
+        dispatch({ type: 'INITIALIZE_APP_FAILURE' });
       }
     };
-    loadData();
+    loadInitialData();
   }, []);
+
+  const selectEvent = useCallback((eventId: string | null) => {
+    if (!eventId) {
+      dispatch({ type: 'SELECT_EVENT', payload: null });
+      return;
+    }
+    const eventToSelect = state.events.find(e => e.id === eventId);
+    if (eventToSelect) {
+      dispatch({ type: 'SELECT_EVENT', payload: eventToSelect });
+    } else {
+      dispatch({ type: 'SELECT_EVENT', payload: null }); // Event not found
+    }
+  }, [state.events]);
+
+  useEffect(() => {
+    const fetchLogsForSelectedEvent = async () => {
+      if (!state.selectedEvent) {
+        dispatch({ type: 'LOAD_LOGS_SUCCESS', payload: {} }); // Clear logs if no event selected
+        return;
+      }
+      dispatch({ type: 'LOAD_LOGS_START' });
+      try {
+        const logsQuery = query(collection(db, FIRESTORE_LOGS_COLLECTION_ID), where("eventId", "==", state.selectedEvent.id));
+        const logsSnapshot = await getDocs(logsQuery);
+        const fetchedLogs: Record<string, DailyLog> = {};
+        logsSnapshot.forEach((logDoc) => {
+          // The log ID in Firestore is YYYY-MM-DD, use this as key
+          fetchedLogs[logDoc.id] = logDoc.data() as DailyLog;
+        });
+        dispatch({ type: 'LOAD_LOGS_SUCCESS', payload: fetchedLogs });
+      } catch (error) {
+        console.error(`[AppContext] Failed to load logs for event ${state.selectedEvent.id}:`, error);
+        dispatch({ type: 'LOAD_LOGS_FAILURE' });
+      }
+    };
+    fetchLogsForSelectedEvent();
+  }, [state.selectedEvent]);
+
 
   const setUserRole = useCallback((role: 'editor' | 'partner' | null) => {
     if (role) {
       localStorage.setItem(USER_ROLE_LOCAL_STORAGE_KEY, role);
     } else {
       localStorage.removeItem(USER_ROLE_LOCAL_STORAGE_KEY);
+      selectEvent(null); // Clear selected event on logout
     }
     dispatch({ type: 'SET_USER_ROLE', payload: role });
-  }, []);
+  }, [selectEvent]);
 
-
-  const setEventDetails = useCallback(async (eventName: string | null, startDate: Date, endDate: Date) => {
-    const formattedStartDate = format(startDate, 'yyyy-MM-dd');
-    const formattedEndDate = format(endDate, 'yyyy-MM-dd');
-    try {
-      const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
-      await setDoc(settingsDocRef, { eventName: eventName || "", eventStartDate: formattedStartDate, eventEndDate: formattedEndDate }, { merge: true });
-      dispatch({ type: 'SET_EVENT_DETAILS', payload: { eventName, startDate, endDate } });
-    } catch (error) {
-      console.error("Failed to save event details to Firestore:", error);
+  const addEvent = useCallback(async (eventData: Omit<Event, 'id' | 'createdBy'>): Promise<string | null> => {
+    if (state.userRole !== 'editor') {
+      console.error("[AppContext] Only editor can add events.");
+      return null;
     }
-  }, []);
+    try {
+      const newEventDocRef = await addDoc(collection(db, FIRESTORE_EVENTS_COLLECTION_ID), {
+        ...eventData,
+        createdBy: state.userRole, // Or a more specific user ID if you have one
+        startDate: format(parseISO(eventData.startDate), 'yyyy-MM-dd'), // Ensure format
+        endDate: format(parseISO(eventData.endDate), 'yyyy-MM-dd'),     // Ensure format
+      });
+      const newEvent: Event = { id: newEventDocRef.id, ...eventData, createdBy: state.userRole };
+      dispatch({ type: 'ADD_EVENT_SUCCESS', payload: newEvent });
+      return newEventDocRef.id;
+    } catch (error) {
+      console.error("[AppContext] Failed to add event to Firestore:", error);
+      return null;
+    }
+  }, [state.userRole]);
 
-  const upsertLog = useCallback(async (date: Date, logData: DailyLog) => {
+  const upsertLog = useCallback(async (date: Date, logEntry: Omit<DailyLog, 'eventId'>) => {
+    if (!state.selectedEvent) {
+      console.error("[AppContext] Cannot save log: No event selected.");
+      return;
+    }
     const formattedDate = format(date, 'yyyy-MM-dd');
     try {
-      const logDocRef = doc(db, FIRESTORE_LOGS_COLLECTION_ID, formattedDate);
-
-      const editorSong: SongEntry | undefined = (logData.songs?.editor?.link)
-        ? { link: logData.songs.editor.link, title: logData.songs.editor.title || "" }
-        : undefined;
-      const partnerSong: SongEntry | undefined = (logData.songs?.partner?.link)
-        ? { link: logData.songs.partner.link, title: logData.songs.partner.title || "" }
-        : undefined;
-
-      const dataToSave: DailyLog = {
-        editorNotes: logData.editorNotes || [],
-        partnerNotes: logData.partnerNotes || [],
-        promptForPartner: logData.promptForPartner || "",
-        promptForEditor: logData.promptForEditor || "",
+      const logDocRef = doc(db, FIRESTORE_LOGS_COLLECTION_ID, formattedDate + "_" + state.selectedEvent.id); // Composite ID
+      
+      const fullLogData: DailyLog = {
+        ...logEntry,
+        eventId: state.selectedEvent.id,
+        editorNotes: logEntry.editorNotes || [],
+        partnerNotes: logEntry.partnerNotes || [],
+        promptForPartner: logEntry.promptForPartner || "",
+        promptForEditor: logEntry.promptForEditor || "",
         moods: {
-          editor: logData.moods?.editor || null,
-          partner: logData.moods?.partner || null,
+          editor: logEntry.moods?.editor || null,
+          partner: logEntry.moods?.partner || null,
         },
-        ...( (editorSong || partnerSong) && {
-            songs: {
-              ...(editorSong && { editor: editorSong }),
-              ...(partnerSong && { partner: partnerSong }),
-            }
-          }
-        )
+        songs: {
+          editor: logEntry.songs?.editor || null,
+          partner: logEntry.songs?.partner || null,
+        }
       };
       
-      await setDoc(logDocRef, dataToSave, { merge: true });
-      dispatch({ type: 'UPSERT_LOG', payload: { date: formattedDate, log: dataToSave } });
+      // Firestore document ID will be YYYY-MM-DD for easy querying by date within an event's logs
+      // We might need to change this if logs from different events on the same date could clash.
+      // For now, assuming logs are fetched per event, the date key in the 'logs' state object is fine.
+      // The Firestore document ID should be unique. A composite key like `YYYY-MM-DD_eventId` is safer.
+      // Let's stick to storing logs in the `logs` state object keyed by 'YYYY-MM-DD' for simplicity in `getLog`.
+      // The Firestore write will use the composite key.
+      await setDoc(doc(db, FIRESTORE_LOGS_COLLECTION_ID, `${formattedDate}_${state.selectedEvent.id}`), fullLogData, { merge: true });
+
+      // Update local state, keying by date for UI consistency
+      dispatch({ type: 'UPSERT_LOG', payload: { date: formattedDate, log: fullLogData } });
     } catch (error: any) {
-      console.error("Failed to save log to Firestore:", error.message, error.stack);
+      console.error("[AppContext] Failed to save log to Firestore:", error.message, error.stack);
     }
-  }, []);
+  }, [state.selectedEvent]);
 
   const getLog = useCallback((date: Date): DailyLog | undefined => {
+    if (!state.selectedEvent) return undefined;
     return state.logs[format(date, 'yyyy-MM-dd')];
-  }, [state.logs]);
+  }, [state.logs, state.selectedEvent]);
 
-  const isConfigured = useCallback((): boolean => {
-    return !!state.eventStartDate && !!state.eventEndDate &&
-           isValid(parseISO(state.eventStartDate)) && isValid(parseISO(state.eventEndDate));
-  }, [state.eventStartDate, state.eventEndDate]);
+  const isEventSelected = useCallback((): boolean => {
+    return !!state.selectedEvent;
+  }, [state.selectedEvent]);
 
-  const resetData = useCallback(async () => {
+  const resetAllAppData = useCallback(async () => {
+    if (state.userRole !== 'editor') {
+        console.error("Unauthorized: Only editor can reset all app data.");
+        return;
+    }
     try {
+      const batch = writeBatch(db);
+
+      // Delete all logs
       const logsCollectionRef = collection(db, FIRESTORE_LOGS_COLLECTION_ID);
       const logsSnapshot = await getDocs(logsCollectionRef);
-      const batch = writeBatch(db);
-      logsSnapshot.docs.forEach((logDoc) => {
-        batch.delete(logDoc.ref);
-      });
-      const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
-      await setDoc(settingsDocRef, { eventName: null, eventStartDate: null, eventEndDate: null }, { merge: true });
+      logsSnapshot.docs.forEach((logDoc) => batch.delete(logDoc.ref));
+
+      // Delete all events
+      const eventsCollectionRef = collection(db, FIRESTORE_EVENTS_COLLECTION_ID);
+      const eventsSnapshot = await getDocs(eventsCollectionRef);
+      eventsSnapshot.docs.forEach((eventDoc) => batch.delete(eventDoc.ref));
+      
+      // Note: Global config (access codes) are NOT reset here.
+      // If you wanted to reset them, you'd update the config/appSettings doc.
+      // For now, we just clear event-related data.
 
       await batch.commit();
-      dispatch({ type: 'RESET_DATA_STATE' });
+      dispatch({ type: 'RESET_DATA_STATE_SUCCESS' });
+      // Optionally, clear selected event if any was selected before reset
+      selectEvent(null);
+
     } catch (error) {
-      console.error("Failed to reset log data in Firestore:", error);
+      console.error("[AppContext] Failed to reset all app data in Firestore:", error);
     }
-  }, []);
+  }, [state.userRole, selectEvent]);
 
   const attemptLoginWithCode = useCallback((enteredCode: string): boolean => {
     if (!state.isInitialized) {
-      console.warn("[AppContext] Attempted login before app context initialized or settings loaded.");
+      console.warn("[AppContext] Attempted login before app context initialized or global config loaded.");
+      return false;
+    }
+    const { editorCode, partnerCode } = state.globalConfig;
+
+    if (!editorCode && !partnerCode) {
+      console.warn("[AppContext] Editor/Partner codes not found in loaded global config. Check Firestore 'config/appSettings'.");
       return false;
     }
 
-    if (!state.editorCode && !state.partnerCode) {
-      console.warn("[AppContext] Editor/Partner codes not found in loaded app settings. Check Firestore 'config/appSettings'.");
-      return false;
-    }
-
-    if (state.editorCode && enteredCode === state.editorCode) {
+    if (editorCode && enteredCode === editorCode) {
       setUserRole('editor');
       return true;
     }
-    if (state.partnerCode && enteredCode === state.partnerCode) {
+    if (partnerCode && enteredCode === partnerCode) {
       setUserRole('partner');
       return true;
     }
     return false;
-  }, [state.isInitialized, state.editorCode, state.partnerCode, setUserRole]);
-
+  }, [state.isInitialized, state.globalConfig, setUserRole]);
 
   return (
-    <AppContext.Provider value={{ ...state, setEventDetails, upsertLog, getLog, isConfigured, resetData, setUserRole, attemptLoginWithCode }}>
+    <AppContext.Provider value={{ ...state, selectEvent, addEvent, upsertLog, getLog, isEventSelected, resetAllAppData, setUserRole, attemptLoginWithCode }}>
       {children}
     </AppContext.Provider>
   );
