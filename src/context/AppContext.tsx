@@ -3,7 +3,7 @@
 
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useEffect, useReducer, useCallback } from 'react';
-import type { AppData, DailyLog, AppSettings } from '@/lib/types';
+import type { AppData, DailyLog, AppSettings, PhotoEntry } from '@/lib/types';
 import { format, isValid, parseISO } from 'date-fns';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, collection, getDocs, writeBatch, deleteDoc } from 'firebase/firestore';
@@ -161,10 +161,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         spotifyLink: typeof logData.spotifyLink === 'string' ? logData.spotifyLink : "",
         songTitle: typeof logData.songTitle === 'string' ? logData.songTitle : "",
         partnerNotes: logData.partnerNotes || [],
-        photoUrl: typeof logData.photoUrl === 'string' ? logData.photoUrl : "", // Default to empty string if undefined
-        photoDataAiHint: typeof logData.photoDataAiHint === 'string' ? logData.photoDataAiHint : "", // Default to empty string
+        photos: { // Ensure photos object and its potential sub-objects are handled
+          editor: logData.photos?.editor ? { 
+            url: typeof logData.photos.editor.url === 'string' ? logData.photos.editor.url : "",
+            hint: typeof logData.photos.editor.hint === 'string' ? logData.photos.editor.hint : "",
+          } : undefined,
+          partner: logData.photos?.partner ? {
+            url: typeof logData.photos.partner.url === 'string' ? logData.photos.partner.url : "",
+            hint: typeof logData.photos.partner.hint === 'string' ? logData.photos.partner.hint : "",
+          } : undefined,
+        },
       };
-      await setDoc(logDocRef, dataToSave);
+       // Clean up photos object: if editor or partner is undefined, don't save them
+      if (!dataToSave.photos?.editor) delete dataToSave.photos?.editor;
+      if (!dataToSave.photos?.partner) delete dataToSave.photos?.partner;
+      if (dataToSave.photos && Object.keys(dataToSave.photos).length === 0) {
+        delete dataToSave.photos; // Delete the photos object if it's empty
+      }
+
+      await setDoc(logDocRef, dataToSave, { merge: true }); // Using merge: true to be safe with partial updates
       dispatch({ type: 'UPSERT_LOG', payload: { date: formattedDate, log: dataToSave } });
     } catch (error) {
       console.error("Failed to save log to Firestore:", error);
@@ -189,11 +204,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       logsSnapshot.docs.forEach((logDoc) => {
         batch.delete(logDoc.ref);
       });
+      // Also delete photos from storage - this requires listing files, which is complex
+      // For now, we'll just clear Firestore. Photos in storage would become orphaned.
+      // A more robust solution would involve a Firebase Function to clean up orphaned storage.
       await batch.commit();
       
-      // Do not remove user role from local storage here, as they might still be "logged in"
-      // Let the /safe-space page handle role if it becomes null
-      dispatch({ type: 'RESET_DATA_STATE' }); // This will clear logs in state
+      dispatch({ type: 'RESET_DATA_STATE' }); 
     } catch (error) {
       console.error("Failed to reset log data in Firestore:", error);
     }
@@ -206,7 +222,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
     if (!state.editorCode && !state.partnerCode) {
       console.warn("Editor/Partner codes not configured in Firestore settings.");
-      // Potentially show a message to the user here, or on the safe-space page
       return false;
     }
 
