@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from 'next/link';
@@ -15,7 +16,7 @@ export default function HomePage() {
 
   useEffect(() => {
     const mode = searchParams.get('mode');
-    if (mode === 'partner') {
+    if (mode === 'masti') { // Changed 'partner' to 'masti'
       setUserRole('partner');
     } else if (mode === 'editor') {
       setUserRole('editor');
