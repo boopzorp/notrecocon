@@ -13,12 +13,16 @@ import { KeyRound, ShieldAlert } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function SafeSpacePage() {
-  const { attemptLoginWithCode, isInitialized, editorCode, partnerCode } = useAppContext();
+  const { attemptLoginWithCode, isInitialized, globalConfig } = useAppContext();
   const router = useRouter();
   const { toast } = useToast();
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Correctly access codes from globalConfig
+  const editorCode = globalConfig?.editorCode;
+  const partnerCode = globalConfig?.partnerCode;
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -38,7 +42,8 @@ export default function SafeSpacePage() {
         title: "Welcome!",
         description: "You've successfully entered Our Safe Space.",
       });
-      router.push('/');
+      // On successful login, we should now navigate to the /events page
+      router.push('/events');
     } else {
       setError("That code doesn't seem right. Please try again.");
       toast({
@@ -60,7 +65,8 @@ export default function SafeSpacePage() {
     );
   }
   
-  const codesNotConfigured = isInitialized && !editorCode && !partnerCode;
+  // Check if globalConfig itself is loaded, then check codes
+  const codesNotConfigured = isInitialized && (!globalConfig || (!editorCode && !partnerCode));
 
   return (
     <AppContainer>
