@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { DailyLog } from "@/lib/types";
-import { Music2, Save, BookOpen, Lightbulb, Trash2, PenLine, Gift, MessageSquarePlus, MessagesSquare, PlusCircle, Search, Loader2 } from 'lucide-react';
+import { Music2, Save, BookOpen, Lightbulb, Trash2, PenLine, Gift, MessageSquarePlus, MessagesSquare, PlusCircle, Search, Loader2, MessageCircleQuestion, MessageCircleHeart } from 'lucide-react';
 import { generateSuggestedReplies, type SuggestedRepliesOutput } from '@/ai/flows/suggested-replies';
 import { extractSongDetails, type ExtractSongDetailsOutput } from '@/ai/flows/extract-song-details-flow';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
@@ -29,6 +29,9 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   const [spotifyLink, setSpotifyLink] = useState('');
   const [songTitle, setSongTitle] = useState('');
   const [newPartnerNoteText, setNewPartnerNoteText] = useState('');
+  const [promptForPartner, setPromptForPartner] = useState('');
+  const [promptForEditor, setPromptForEditor] = useState('');
+
 
   const [suggestedReplies, setSuggestedReplies] = useState<string[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
@@ -44,6 +47,8 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     setSpotifyLink(log?.spotifyLink || '');
     setSongTitle(log?.songTitle || '');
     setNewPartnerNoteText('');
+    setPromptForPartner(log?.promptForPartner || '');
+    setPromptForEditor(log?.promptForEditor || '');
     setSuggestedReplies([]);
     setErrorSuggestions(null);
     setSongDetailsError(null);
@@ -51,7 +56,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   }, [log, selectedDate]);
 
 
-  const handleEditorSaveNewNote = async (e: FormEvent) => {
+  const handleEditorSave = async (e: FormEvent) => {
     e.preventDefault();
     
     const currentLogSnapshot: DailyLog = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] };
@@ -63,14 +68,17 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
         : (currentLogSnapshot.editorNotes || []),
       spotifyLink: spotifyLink.trim(),
       songTitle: songTitle.trim(),
-      partnerNotes: currentLogSnapshot.partnerNotes || [],
+      promptForPartner: promptForPartner.trim(), // Save editor's prompt for partner
+      partnerNotes: currentLogSnapshot.partnerNotes || [], // Keep existing partner notes
+      promptForEditor: currentLogSnapshot.promptForEditor || '', // Keep existing partner's prompt for editor
     };
 
     onSave(selectedDate, updatedLog);
     setNewEditorNoteText('');
+    // Don't clear promptForPartner here, allow it to persist unless changed
   };
   
-  const handlePartnerSaveNewNote = async (e: FormEvent) => {
+  const handlePartnerSave = async (e: FormEvent) => {
     e.preventDefault();
 
     const currentLogSnapshot: DailyLog = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] };
@@ -78,10 +86,17 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     const updatedLog: DailyLog = {
       ...currentLogSnapshot,
       partnerNotes: newPartnerNoteText.trim() ? [...(currentLogSnapshot.partnerNotes || []), newPartnerNoteText] : (currentLogSnapshot.partnerNotes || []),
+      promptForEditor: promptForEditor.trim(), // Save partner's prompt for editor
+      // Keep existing editor details
+      editorNotes: currentLogSnapshot.editorNotes || [],
+      spotifyLink: currentLogSnapshot.spotifyLink || '',
+      songTitle: currentLogSnapshot.songTitle || '',
+      promptForPartner: currentLogSnapshot.promptForPartner || '',
     };
 
     onSave(selectedDate, updatedLog);
     setNewPartnerNoteText('');
+     // Don't clear promptForEditor here, allow it to persist unless changed
   };
 
   const handleDeleteEntireEntry = async () => {
@@ -165,11 +180,18 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle className="font-headline text-2xl text-primary">{formattedDateDisplay}</CardTitle>
-          {(!log || (!log.editorNotes?.length && !log.spotifyLink && !log.partnerNotes?.length)) && (
-             <CardDescription>No entries for this day yet. Be the first to leave a note!</CardDescription>
+          {(!log || (!log.editorNotes?.length && !log.spotifyLink && !log.partnerNotes?.length && !log.promptForPartner && !log.promptForEditor)) && (
+             <CardDescription>No entries for this day yet. Be the first to leave a note or a prompt!</CardDescription>
           )}
         </CardHeader>
         <CardContent className="space-y-6">
+          {log?.promptForPartner && (
+            <div className="p-3 border rounded-md bg-secondary/30 shadow-sm">
+              <Label className="text-muted-foreground font-semibold flex items-center mb-1"><MessageCircleQuestion className="w-4 h-4 mr-2 text-accent"/>Their Prompt for You:</Label>
+              <p className="whitespace-pre-wrap text-sm">{log.promptForPartner}</p>
+            </div>
+          )}
+
           {log?.editorNotes && log.editorNotes.length > 0 && (
             <div>
               <Label className="text-muted-foreground font-semibold flex items-center"><BookOpen className="w-4 h-4 mr-2 text-accent"/> Their Thoughts:</Label>
@@ -210,7 +232,19 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
             </div>
           )}
 
-          <form onSubmit={handlePartnerSaveNewNote} className="space-y-3 pt-6 border-t">
+          <form onSubmit={handlePartnerSave} className="space-y-3 pt-6 border-t">
+            <div className="space-y-2">
+              <Label htmlFor="promptForEditor" className="flex items-center font-semibold text-base"><MessageCircleHeart className="w-5 h-5 mr-2 text-accent"/>Your Prompt for Them:</Label>
+              <Textarea
+                id="promptForEditor"
+                value={promptForEditor}
+                onChange={(e) => setPromptForEditor(e.target.value)}
+                placeholder="Ask them something or leave a sweet thought..."
+                rows={2}
+                className="bg-white"
+              />
+            </div>
+
             <Label htmlFor="newPartnerNote" className="flex items-center font-semibold text-base">
               <MessageSquarePlus className="w-5 h-5 mr-2 text-accent"/>Add Your Note:
             </Label>
@@ -222,9 +256,9 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               rows={3}
               className="bg-white"
             />
-             <Button type="submit" className="w-full" disabled={!newPartnerNoteText.trim()}>
+             <Button type="submit" className="w-full" disabled={!newPartnerNoteText.trim() && !promptForEditor.trim()}>
                 <Save className="w-4 h-4 mr-2"/>
-                Add My Note
+                Add My Note & Prompt
               </Button>
           </form>
         </CardContent>
@@ -235,12 +269,20 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   // Editor Mode
   return (
     <Card className="shadow-md">
-      <form onSubmit={handleEditorSaveNewNote}>
+      <form onSubmit={handleEditorSave}>
         <CardHeader>
           <CardTitle className="font-headline text-2xl text-primary">Log for {formattedDateDisplay}</CardTitle>
-          <CardDescription>Share your thoughts, a song, and see notes from your partner.</CardDescription>
+          <CardDescription>Share your thoughts, a song, prompts, and see notes from your partner.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+
+          {log?.promptForEditor && (
+             <div className="p-3 border rounded-md bg-secondary/50 shadow-sm">
+              <Label className="text-muted-foreground font-semibold flex items-center mb-1"><MessageCircleHeart className="w-4 h-4 mr-2 text-accent"/>Their Prompt for You:</Label>
+              <p className="whitespace-pre-wrap text-sm">{log.promptForEditor}</p>
+            </div>
+          )}
+
           {log?.editorNotes && log.editorNotes.length > 0 && (
             <div className="space-y-2 pt-4 border-t">
               <Label className="font-semibold flex items-center"><BookOpen className="w-4 h-4 mr-2 text-accent"/>Your Saved Notes:</Label>
@@ -261,6 +303,17 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               onChange={(e) => setNewEditorNoteText(e.target.value)}
               placeholder="What's on your mind today..."
               rows={4}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="promptForPartner" className="flex items-center font-semibold"><MessageCircleQuestion className="w-4 h-4 mr-2 text-accent"/>Your Prompt for Them:</Label>
+            <Textarea
+              id="promptForPartner"
+              value={promptForPartner}
+              onChange={(e) => setPromptForPartner(e.target.value)}
+              placeholder="Ask them something or leave a special thought..."
+              rows={2}
             />
           </div>
 
@@ -342,14 +395,14 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
 
         </CardContent>
         <CardFooter className="flex flex-col gap-3">
-          {onDelete && (log?.editorNotes?.length || log?.spotifyLink || log?.partnerNotes?.length || log?.songTitle) && (
+          {onDelete && (log?.editorNotes?.length || log?.spotifyLink || log?.partnerNotes?.length || log?.songTitle || log?.promptForEditor || log?.promptForPartner) && (
              <Button type="button" variant="destructive" onClick={handleDeleteEntireEntry} className="w-full">
                 <Trash2 className="w-4 h-4 mr-2"/> Delete Entire Day's Entry
               </Button>
           )}
-          <Button type="submit" className="w-full whitespace-normal text-center h-auto">
+          <Button type="submit" className="w-full whitespace-normal text-center h-auto" disabled={!newEditorNoteText.trim() && !spotifyLink.trim() && !songTitle.trim() && !promptForPartner.trim() && !(log?.editorNotes?.length || log?.spotifyLink || log?.songTitle || log?.promptForPartner)}>
             <PlusCircle className="w-4 h-4 mr-2"/>
-            Add Note / Update Details
+            Add Note / Update Details & Prompt
           </Button>
         </CardFooter>
       </form>

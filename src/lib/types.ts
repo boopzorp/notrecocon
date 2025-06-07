@@ -4,6 +4,8 @@ export interface DailyLog {
   spotifyLink: string;
   songTitle?: string;
   partnerNotes?: string[];
+  promptForPartner?: string; // Prompt from editor to partner
+  promptForEditor?: string;   // Prompt from partner to editor
 }
 
 export interface AppSettings {
