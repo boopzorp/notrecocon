@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { FormEvent } from 'react';
@@ -8,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { DailyLog } from "@/lib/types";
-import { Music2, Save, BookOpen, Lightbulb, Trash2, PenLine, Gift } from 'lucide-react';
+import { Music2, Save, BookOpen, Lightbulb, Trash2, PenLine, Gift, MessageSquarePlus, MessagesSquare } from 'lucide-react';
 import { generateSuggestedReplies, type SuggestedRepliesOutput } from '@/ai/flows/suggested-replies';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 
@@ -23,7 +24,7 @@ interface DailyDetailsCardProps {
 export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: DailyDetailsCardProps) {
   const [note, setNote] = useState('');
   const [spotifyLink, setSpotifyLink] = useState('');
-  const [partnerNoteText, setPartnerNoteText] = useState(''); // For partner's input in reader mode
+  const [newPartnerNoteText, setNewPartnerNoteText] = useState(''); // For partner's new note input
   
   const [suggestedReplies, setSuggestedReplies] = useState<string[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
@@ -32,21 +33,35 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   useEffect(() => {
     setNote(log?.note || '');
     setSpotifyLink(log?.spotifyLink || '');
-    setPartnerNoteText(log?.partnerNote || ''); // Initialize partner note for reader mode
+    setNewPartnerNoteText(''); // Always clear for new entry
     setSuggestedReplies([]); 
     setErrorSuggestions(null);
   }, [log, selectedDate]);
 
   const handleEditorSave = (e: FormEvent) => {
     e.preventDefault();
-    // Editor saves their note, spotify link, and preserves partner's note
-    onSave(selectedDate, { note, spotifyLink, partnerNote: log?.partnerNote || partnerNoteText });
+    onSave(selectedDate, { 
+      note, 
+      spotifyLink, 
+      partnerNotes: log?.partnerNotes || [] // Preserve existing partner notes
+    });
   };
   
   const handlePartnerSave = (e: FormEvent) => {
     e.preventDefault();
-    // Partner saves their note, preserving editor's note and spotify link
-    onSave(selectedDate, { note: log?.note || '', spotifyLink: log?.spotifyLink || '', partnerNote: partnerNoteText });
+    if (!newPartnerNoteText.trim()) return; // Don't save empty notes
+
+    const currentEditorNote = log?.note || '';
+    const currentSpotifyLink = log?.spotifyLink || '';
+    const existingPartnerNotes = log?.partnerNotes || [];
+    
+    const updatedLog: DailyLog = {
+      note: currentEditorNote,
+      spotifyLink: currentSpotifyLink,
+      partnerNotes: [...existingPartnerNotes, newPartnerNoteText],
+    };
+    onSave(selectedDate, updatedLog);
+    setNewPartnerNoteText(''); // Clear input after saving
   };
 
   const handleDelete = () => {
@@ -54,15 +69,12 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
       onDelete(selectedDate);
       setNote('');
       setSpotifyLink('');
-      // Partner note is part of the log, so it's cleared too. 
-      // If partner note should be preserved, onDelete logic in page needs to handle it.
-      // For simplicity, current delete clears everything for the day.
-      setPartnerNoteText('');
+      setNewPartnerNoteText(''); 
     }
   };
 
   const handleGetSuggestions = async () => {
-    if (!note.trim() && mode === 'editor') { // Only editor gets suggestions for their own note
+    if (!note.trim() && mode === 'editor') {
       setErrorSuggestions("Please write your note first to get suggestions.");
       return;
     }
@@ -70,7 +82,6 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     setErrorSuggestions(null);
     setSuggestedReplies([]);
     try {
-      // Use editor's note for suggestions
       const noteToAnalyze = mode === 'editor' ? note : (log?.note || "");
       if (!noteToAnalyze.trim()) {
         setErrorSuggestions("The main note is empty, cannot generate suggestions.");
@@ -90,46 +101,22 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   const formattedDate = selectedDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
   if (mode === 'reader') {
-    if (!log || (!log.note && !log.spotifyLink && !log.partnerNote)) {
-      return (
-        <Card className="shadow-md">
-          <CardHeader>
-            <CardTitle className="font-headline text-2xl text-primary">{formattedDate}</CardTitle>
-            <CardDescription>No entry for this day yet. Check back later, or leave a note!</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handlePartnerSave} className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="partnerNote" className="flex items-center font-semibold"><PenLine className="w-4 h-4 mr-2 text-accent"/>Your Special Note for Them:</Label>
-                <Textarea
-                  id="partnerNote"
-                  value={partnerNoteText}
-                  onChange={(e) => setPartnerNoteText(e.target.value)}
-                  placeholder="Leave a sweet message..."
-                  rows={4}
-                />
-              </div>
-              <Button type="submit" className="w-full sm:w-auto">
-                <Save className="w-4 h-4 mr-2"/> Save My Note
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      );
-    }
     return (
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle className="font-headline text-2xl text-primary">{formattedDate}</CardTitle>
+          {(!log || (!log.note && !log.spotifyLink && (!log.partnerNotes || log.partnerNotes.length === 0))) && (
+             <CardDescription>No entries for this day yet. Be the first to leave a note!</CardDescription>
+          )}
         </CardHeader>
         <CardContent className="space-y-6">
-          {log.note && (
+          {log?.note && (
             <div>
               <Label className="text-muted-foreground font-semibold flex items-center"><BookOpen className="w-4 h-4 mr-2 text-accent"/> Their Thoughts:</Label>
-              <p className="whitespace-pre-wrap p-2 border rounded-md bg-background/70">{log.note}</p>
+              <p className="whitespace-pre-wrap p-3 border rounded-md bg-secondary/30 mt-1">{log.note}</p>
             </div>
           )}
-          {log.spotifyLink && (
+          {log?.spotifyLink && (
             <div>
               <Label className="text-muted-foreground font-semibold flex items-center"><Music2 className="w-4 h-4 mr-2 text-accent"/>Their Song for the Day:</Label>
               <Button variant="link" asChild className="p-0 h-auto">
@@ -139,18 +126,36 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               </Button>
             </div>
           )}
-           {/* Partner's note editing section */}
-          <form onSubmit={handlePartnerSave} className="space-y-2 pt-4 border-t">
-            <Label htmlFor="partnerNote" className="flex items-center font-semibold"><PenLine className="w-4 h-4 mr-2 text-accent"/>Your Special Note for Them:</Label>
+
+          {/* Display Partner's Existing Notes */}
+          {log?.partnerNotes && log.partnerNotes.length > 0 && (
+            <div className="mt-4 pt-4 border-t">
+              <Label className="font-semibold flex items-center"><MessagesSquare className="w-5 h-5 mr-2 text-accent"/>Your Notes for Them:</Label>
+              <ul className="space-y-2 mt-2">
+                {log.partnerNotes.map((pNote, index) => (
+                  <li key={index} className="whitespace-pre-wrap text-sm p-3 border rounded-md bg-background shadow-sm">
+                    {pNote}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          
+          {/* Form to add a new partner note */}
+          <form onSubmit={handlePartnerSave} className="space-y-3 pt-6 border-t">
+            <Label htmlFor="newPartnerNote" className="flex items-center font-semibold text-base">
+              <MessageSquarePlus className="w-5 h-5 mr-2 text-accent"/>Add Your Note:
+            </Label>
             <Textarea
-              id="partnerNote"
-              value={partnerNoteText}
-              onChange={(e) => setPartnerNoteText(e.target.value)}
-              placeholder="Leave a sweet message..."
-              rows={4}
+              id="newPartnerNote"
+              value={newPartnerNoteText}
+              onChange={(e) => setNewPartnerNoteText(e.target.value)}
+              placeholder="Leave a sweet message for them..."
+              rows={3}
+              className="bg-white"
             />
-             <Button type="submit" className="w-full sm:w-auto mt-2">
-                <Save className="w-4 h-4 mr-2"/> {log.partnerNote ? "Update My Note" : "Save My Note"}
+             <Button type="submit" className="w-full sm:w-auto" disabled={!newPartnerNoteText.trim()}>
+                <Save className="w-4 h-4 mr-2"/> Add My Note
               </Button>
           </form>
         </CardContent>
@@ -188,10 +193,16 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
             />
           </div>
           
-          {log?.partnerNote && (
+          {log?.partnerNotes && log.partnerNotes.length > 0 && (
             <div className="space-y-2 pt-4 border-t">
-                <Label className="text-muted-foreground font-semibold flex items-center"><Gift className="w-4 h-4 mr-2 text-accent"/>A Note From Your Partner:</Label>
-                <p className="whitespace-pre-wrap p-2 border rounded-md bg-secondary/50">{log.partnerNote}</p>
+                <Label className="text-muted-foreground font-semibold flex items-center"><Gift className="w-5 h-5 mr-2 text-accent"/>Notes From Your Partner:</Label>
+                 <ul className="space-y-2 mt-1">
+                    {log.partnerNotes.map((pNote, index) => (
+                    <li key={index} className="whitespace-pre-wrap text-sm p-3 border rounded-md bg-secondary/50">
+                        {pNote}
+                    </li>
+                    ))}
+                </ul>
             </div>
           )}
 
@@ -220,7 +231,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
 
         </CardContent>
         <CardFooter className="flex flex-col sm:flex-row justify-between gap-2">
-          {onDelete && (log?.note || log?.spotifyLink || log?.partnerNote) && ( // Show delete if any part of log exists
+          {onDelete && (log?.note || log?.spotifyLink || (log?.partnerNotes && log.partnerNotes.length > 0)) && ( 
              <Button type="button" variant="destructive" onClick={handleDelete} className="w-full sm:w-auto">
                 <Trash2 className="w-4 h-4 mr-2"/> Delete Entry
               </Button>

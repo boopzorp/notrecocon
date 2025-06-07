@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from 'react';
@@ -96,10 +97,10 @@ export default function ReaderPage() {
   
   const currentLog = selectedDate ? getLog(selectedDate) : undefined;
 
-  const handleSavePartnerNote = (date: Date, logWithPartnerNote: DailyLog) => {
-    upsertLog(date, logWithPartnerNote);
+  const handleSavePartnerNote = (date: Date, logWithPartnerNotes: DailyLog) => {
+    upsertLog(date, logWithPartnerNotes);
     toast({
-      title: "Note Saved!",
+      title: "New Note Added!",
       description: `Your special note for ${format(date, "MMMM do, yyyy")} has been saved.`,
       className: "bg-secondary text-secondary-foreground",
     });
@@ -123,18 +124,18 @@ export default function ReaderPage() {
           />
         </PageSection>
         
-        <PageSection title="Daily Message" titleClassName="text-primary">
+        <PageSection title="Daily Message & Your Notes" titleClassName="text-primary">
           {selectedDate ? (
             <DailyDetailsCard
               selectedDate={selectedDate}
               log={currentLog}
-              onSave={handleSavePartnerNote} // Partner saves their note
+              onSave={handleSavePartnerNote} 
               mode="reader"
             />
           ) : (
              <Card className="shadow-md">
               <CardContent className="p-6 text-center">
-                <p className="text-muted-foreground">Select a date from the calendar to view the entry or leave a note for that day.</p>
+                <p className="text-muted-foreground">Select a date from the calendar to view entries or add your notes.</p>
               </CardContent>
             </Card>
           )}
