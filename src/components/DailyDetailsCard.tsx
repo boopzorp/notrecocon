@@ -1,19 +1,23 @@
 
 "use client";
 
-import type { FormEvent } from 'react';
-import { useState, useEffect } from 'react';
+import type { FormEvent, ChangeEvent } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import Image from 'next/image';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { DailyLog } from "@/lib/types";
-import { Music2, Save, BookOpen, Lightbulb, Trash2, PenLine, Gift, MessageSquarePlus, MessagesSquare, PlusCircle, Search, Loader2 } from 'lucide-react';
+import { Music2, Save, BookOpen, Lightbulb, Trash2, PenLine, Gift, MessageSquarePlus, MessagesSquare, PlusCircle, Search, Loader2, ImageUp, ImageOff, FileImage } from 'lucide-react';
 import { generateSuggestedReplies, type SuggestedRepliesOutput } from '@/ai/flows/suggested-replies';
 import { extractSongDetails, type ExtractSongDetailsOutput } from '@/ai/flows/extract-song-details-flow';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { useToast } from '@/hooks/use-toast';
+import { storage } from '@/lib/firebase';
+import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
+import { format } from 'date-fns';
 
 interface DailyDetailsCardProps {
   selectedDate: Date;
@@ -27,7 +31,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   const [newEditorNoteText, setNewEditorNoteText] = useState('');
   const [spotifyLink, setSpotifyLink] = useState('');
   const [songTitle, setSongTitle] = useState('');
-  // const [songArtist, setSongArtist] = useState(''); // Removed
+  
   const [newPartnerNoteText, setNewPartnerNoteText] = useState('');
 
   const [suggestedReplies, setSuggestedReplies] = useState<string[]>([]);
@@ -37,33 +41,131 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   const [isFetchingSongDetails, setIsFetchingSongDetails] = useState(false);
   const [songDetailsError, setSongDetailsError] = useState<string | null>(null);
 
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [currentPhotoUrl, setCurrentPhotoUrl] = useState<string | null>(null);
+  const [photoDataAiHint, setPhotoDataAiHint] = useState('');
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+
   const { toast } = useToast();
 
   useEffect(() => {
     setNewEditorNoteText('');
     setSpotifyLink(log?.spotifyLink || '');
     setSongTitle(log?.songTitle || '');
-    // setSongArtist(log?.songArtist || ''); // Removed
     setNewPartnerNoteText('');
     setSuggestedReplies([]);
     setErrorSuggestions(null);
     setSongDetailsError(null);
     setIsFetchingSongDetails(false);
+
+    // Photo related state reset
+    setSelectedFile(null);
+    setPhotoPreviewUrl(null);
+    setCurrentPhotoUrl(log?.photoUrl || null);
+    setPhotoDataAiHint(log?.photoDataAiHint || '');
+    setIsUploadingPhoto(false);
+    setPhotoUploadError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+
   }, [log, selectedDate]);
 
+  const handlePhotoFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      const file = event.target.files[0];
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        setPhotoUploadError("Image is too large. Max 5MB allowed.");
+        setSelectedFile(null);
+        setPhotoPreviewUrl(null);
+        return;
+      }
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+      if (!allowedTypes.includes(file.type)) {
+        setPhotoUploadError("Invalid file type. Only JPG, PNG, GIF, WEBP are allowed.");
+        setSelectedFile(null);
+        setPhotoPreviewUrl(null);
+        return;
+      }
 
-  const handleEditorSaveNewNote = (e: FormEvent) => {
-    e.preventDefault();
+      setSelectedFile(file);
+      setPhotoPreviewUrl(URL.createObjectURL(file));
+      setPhotoUploadError(null); // Clear previous error
+      setCurrentPhotoUrl(null); // Clear existing photo if new one is selected
+    }
+  };
 
-     const currentLogSnapshot: DailyLog = log
-      ? {
-          editorNotes: Array.isArray(log.editorNotes) ? log.editorNotes : [],
-          spotifyLink: typeof log.spotifyLink === 'string' ? log.spotifyLink : '',
-          songTitle: typeof log.songTitle === 'string' ? log.songTitle : '',
-          // songArtist: typeof log.songArtist === 'string' ? log.songArtist : '', // Removed
-          partnerNotes: Array.isArray(log.partnerNotes) ? log.partnerNotes : []
+  const handleRemovePhoto = async (isRemovingFromSave: boolean = false) => {
+    const photoPath = `dailyPhotos/${format(selectedDate, 'yyyy-MM-dd')}/photo_of_the_day`;
+    if (currentPhotoUrl || log?.photoUrl) { // Check both current state and log
+      try {
+        const photoToDeleteRef = storageRef(storage, photoPath);
+        await deleteObject(photoToDeleteRef);
+        toast({ title: "Photo Removed", description: "The photo has been removed from storage." });
+      } catch (error: any) {
+        // If file not found, it's fine, maybe it was already deleted or path changed.
+        if (error.code !== 'storage/object-not-found') {
+          console.error("Error deleting photo from storage:", error);
+          // Don't block UI for this, but log it.
         }
-      : { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] }; // Removed songArtist
+      }
+    }
+    
+    setSelectedFile(null);
+    setPhotoPreviewUrl(null);
+    setCurrentPhotoUrl(null);
+    setPhotoDataAiHint(''); // Also clear hint when photo is removed
+     if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+
+    // If not part of a save operation, explicitly save the log with photoUrl cleared
+    if (!isRemovingFromSave) {
+       const currentLogSnapshot = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] };
+       const updatedLog: DailyLog = {
+        ...currentLogSnapshot,
+        photoUrl: '',
+        photoDataAiHint: '',
+      };
+      onSave(selectedDate, updatedLog);
+    }
+    return { photoUrl: '', photoDataAiHint: '' }; // Return cleared fields for save operation
+  };
+
+
+  const handleEditorSaveNewNote = async (e: FormEvent) => {
+    e.preventDefault();
+    setIsUploadingPhoto(false);
+    setPhotoUploadError(null);
+
+    let uploadedPhotoUrl = currentPhotoUrl || log?.photoUrl || '';
+    let finalPhotoDataAiHint = photoDataAiHint || log?.photoDataAiHint || '';
+
+
+    if (selectedFile) {
+      setIsUploadingPhoto(true);
+      const photoPath = `dailyPhotos/${format(selectedDate, 'yyyy-MM-dd')}/photo_of_the_day`;
+      const fileRef = storageRef(storage, photoPath);
+      
+      try {
+        const uploadTask = uploadBytesResumable(fileRef, selectedFile);
+        await uploadTask;
+        uploadedPhotoUrl = await getDownloadURL(uploadTask.snapshot.ref);
+        toast({ title: "Photo Uploaded!", description: "Your photo is now part of the entry." });
+      } catch (error) {
+        console.error("Error uploading photo:", error);
+        setPhotoUploadError("Failed to upload photo. Please try again.");
+        setIsUploadingPhoto(false);
+        return;
+      }
+      setIsUploadingPhoto(false);
+    }
+    
+    const currentLogSnapshot: DailyLog = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] };
     
     const updatedLog: DailyLog = {
       editorNotes: newEditorNoteText.trim()
@@ -71,28 +173,24 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
         : (currentLogSnapshot.editorNotes || []),
       spotifyLink: spotifyLink.trim(),
       songTitle: songTitle.trim(),
-      // songArtist: songArtist.trim(), // Removed
       partnerNotes: currentLogSnapshot.partnerNotes || [],
+      photoUrl: uploadedPhotoUrl,
+      photoDataAiHint: finalPhotoDataAiHint.trim(),
     };
+
     onSave(selectedDate, updatedLog);
     setNewEditorNoteText('');
-    // Note: songTitle and spotifyLink state remain as they might have been auto-filled or manually entered
+    setSelectedFile(null); // Clear selected file after successful save
+    setPhotoPreviewUrl(null); // Clear preview
+    // currentPhotoUrl will be updated by useEffect when log re-fetches
+    // photoDataAiHint also updated by useEffect
   };
   
   const handlePartnerSaveNewNote = (e: FormEvent) => {
     e.preventDefault();
     if (!newPartnerNoteText.trim()) return;
 
-    const currentLogSnapshot: DailyLog = log
-      ? {
-          editorNotes: Array.isArray(log.editorNotes) ? log.editorNotes : [],
-          spotifyLink: typeof log.spotifyLink === 'string' ? log.spotifyLink : '',
-          songTitle: typeof log.songTitle === 'string' ? log.songTitle : '',
-          // songArtist: typeof log.songArtist === 'string' ? log.songArtist : '', // Removed
-          partnerNotes: Array.isArray(log.partnerNotes) ? log.partnerNotes : []
-        }
-      : { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] }; // Removed songArtist
-
+    const currentLogSnapshot: DailyLog = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] };
 
     const updatedLog: DailyLog = {
       ...currentLogSnapshot,
@@ -102,50 +200,31 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     setNewPartnerNoteText('');
   };
 
-  const handleDeleteEntireEntry = () => {
+  const handleDeleteEntireEntry = async () => {
     if (onDelete) {
-      onDelete(selectedDate);
-      setNewEditorNoteText('');
-      setSpotifyLink('');
-      setSongTitle('');
-      // setSongArtist(''); // Removed
-      setNewPartnerNoteText('');
+      // If there's a photo, attempt to remove it from storage first
+      if (log?.photoUrl || currentPhotoUrl) {
+        await handleRemovePhoto(true); // Pass true to indicate it's part of save/delete
+      }
+      onDelete(selectedDate); // This will clear the entire log in context/Firestore
+      // Local state resets are handled by useEffect when `log` becomes undefined
     }
   };
 
   const handleDeletePartnerNote = (indexToDelete: number) => {
-     const currentLogSnapshot: DailyLog = log
-      ? {
-          editorNotes: Array.isArray(log.editorNotes) ? log.editorNotes : [],
-          spotifyLink: typeof log.spotifyLink === 'string' ? log.spotifyLink : '',
-          songTitle: typeof log.songTitle === 'string' ? log.songTitle : '',
-          // songArtist: typeof log.songArtist === 'string' ? log.songArtist : '', // Removed
-          partnerNotes: Array.isArray(log.partnerNotes) ? log.partnerNotes : []
-        }
-      : { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] }; // Removed songArtist
-
+     const currentLogSnapshot: DailyLog = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] };
     const currentPartnerNotes = currentLogSnapshot.partnerNotes;
 
     if (!currentPartnerNotes || indexToDelete < 0 || indexToDelete >= currentPartnerNotes.length) {
       console.error("Invalid index for deleting partner note.");
-      toast({
-        title: "Error",
-        description: "Could not delete partner note: invalid index.",
-        variant: "destructive"
-      });
+      toast({ title: "Error", description: "Could not delete partner note: invalid index.", variant: "destructive"});
       return;
     }
     const updatedPartnerNotes = currentPartnerNotes.filter((_, index) => index !== indexToDelete);
 
-    const updatedLog: DailyLog = {
-      ...currentLogSnapshot,
-      partnerNotes: updatedPartnerNotes,
-    };
+    const updatedLog: DailyLog = { ...currentLogSnapshot, partnerNotes: updatedPartnerNotes };
     onSave(selectedDate, updatedLog);
-    toast({
-      title: "Note Deleted",
-      description: "Your partner's note has been successfully deleted.",
-    });
+    toast({ title: "Note Deleted", description: "Your partner's note has been successfully deleted." });
   };
 
 
@@ -189,19 +268,11 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     try {
       const result: ExtractSongDetailsOutput = await extractSongDetails({ spotifyUrl: spotifyLink });
       setSongTitle(result.songTitle);
-      // setSongArtist(result.songArtist); // Removed
-      toast({
-        title: "Song Details Fetched!",
-        description: `Found title: ${result.songTitle}`,
-      });
+      toast({ title: "Song Details Fetched!", description: `Found title: ${result.songTitle}` });
     } catch (error: any) {
       console.error("Error fetching song details:", error);
       setSongDetailsError(error.message || "Could not fetch song details. Please check the link or try again.");
-      toast({
-        title: "Error Fetching Song Details",
-        description: error.message || "Could not fetch song details.",
-        variant: "destructive",
-      });
+      toast({ title: "Error Fetching Song Details", description: error.message || "Could not fetch song details.", variant: "destructive" });
     } finally {
       setIsFetchingSongDetails(false);
     }
@@ -215,11 +286,25 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle className="font-headline text-2xl text-primary">{formattedDate}</CardTitle>
-          {(!log || (!log.editorNotes?.length && !log.spotifyLink && !log.partnerNotes?.length)) && (
+          {(!log || (!log.editorNotes?.length && !log.spotifyLink && !log.partnerNotes?.length && !log.photoUrl)) && (
              <CardDescription>No entries for this day yet. Be the first to leave a note!</CardDescription>
           )}
         </CardHeader>
         <CardContent className="space-y-6">
+          {log?.photoUrl && (
+            <div className="my-4">
+              <Label className="text-muted-foreground font-semibold flex items-center mb-2"><FileImage className="w-4 h-4 mr-2 text-accent"/> Photo for the Day:</Label>
+              <div className="relative aspect-video w-full rounded-md overflow-hidden border shadow-sm">
+                <Image 
+                  src={log.photoUrl} 
+                  alt={log.photoDataAiHint || "Photo of the day"} 
+                  layout="fill" 
+                  objectFit="cover" 
+                  data-ai-hint={log.photoDataAiHint}
+                />
+              </div>
+            </div>
+          )}
           {log?.editorNotes && log.editorNotes.length > 0 && (
             <div>
               <Label className="text-muted-foreground font-semibold flex items-center"><BookOpen className="w-4 h-4 mr-2 text-accent"/> Their Thoughts:</Label>
@@ -282,16 +367,61 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   }
 
   // Editor Mode
+  const displayPhotoUrl = photoPreviewUrl || currentPhotoUrl;
+
   return (
     <Card className="shadow-md">
       <form onSubmit={handleEditorSaveNewNote}>
         <CardHeader>
           <CardTitle className="font-headline text-2xl text-primary">Log for {formattedDate}</CardTitle>
-          <CardDescription>Share your thoughts, a song, and see notes from your partner.</CardDescription>
+          <CardDescription>Share your thoughts, a song, a photo, and see notes from your partner.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Photo Upload Section */}
+          <div className="space-y-2 pt-4 border-t">
+            <Label htmlFor="photoUpload" className="flex items-center font-semibold"><FileImage className="w-4 h-4 mr-2 text-accent"/>Photo of the Day</Label>
+            {displayPhotoUrl && (
+              <div className="relative aspect-video w-full rounded-md overflow-hidden border shadow-sm mb-2">
+                <Image src={displayPhotoUrl} alt={photoDataAiHint || "Photo preview"} layout="fill" objectFit="cover" data-ai-hint={photoDataAiHint} />
+              </div>
+            )}
+             <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} className="flex-grow">
+                <ImageUp className="w-4 h-4 mr-2"/> {displayPhotoUrl ? "Change Photo" : "Upload Photo"}
+              </Button>
+              <input 
+                type="file" 
+                id="photoUpload" 
+                ref={fileInputRef}
+                accept="image/jpeg,image/png,image/gif,image/webp" 
+                onChange={handlePhotoFileChange} 
+                className="hidden" 
+              />
+              {(displayPhotoUrl || selectedFile) && (
+                <Button type="button" variant="destructive" size="icon" onClick={() => handleRemovePhoto(false)}>
+                  <ImageOff className="w-4 h-4"/>
+                  <span className="sr-only">Remove Photo</span>
+                </Button>
+              )}
+            </div>
+            {photoUploadError && <p className="text-sm text-destructive mt-1">{photoUploadError}</p>}
+            {isUploadingPhoto && <div className="flex items-center text-sm text-muted-foreground mt-1"><Loader2 className="w-4 h-4 mr-2 animate-spin"/>Uploading...</div>}
+            
+            <Label htmlFor="photoDataAiHint" className="text-sm font-medium">Photo Description (for AI & alt text)</Label>
+            <Input
+              id="photoDataAiHint"
+              type="text"
+              value={photoDataAiHint}
+              onChange={(e) => setPhotoDataAiHint(e.target.value)}
+              placeholder="e.g., beautiful sunset beach"
+              maxLength={50}
+            />
+             <p className="text-xs text-muted-foreground">Max 2 keywords, e.g., "cat playing".</p>
+          </div>
+
+
           {log?.editorNotes && log.editorNotes.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-2 pt-4 border-t">
               <Label className="font-semibold flex items-center"><BookOpen className="w-4 h-4 mr-2 text-accent"/>Your Saved Notes:</Label>
               <ul className="space-y-2 mt-1">
                 {log.editorNotes.map((eNote, index) => (
@@ -391,13 +521,14 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
 
         </CardContent>
         <CardFooter className="flex flex-col gap-3">
-          {onDelete && (log?.editorNotes?.length || log?.spotifyLink || log?.partnerNotes?.length || log?.songTitle ) && (
+          {onDelete && (log?.editorNotes?.length || log?.spotifyLink || log?.partnerNotes?.length || log?.songTitle || log?.photoUrl ) && (
              <Button type="button" variant="destructive" onClick={handleDeleteEntireEntry} className="w-full">
                 <Trash2 className="w-4 h-4 mr-2"/> Delete Entire Day's Entry
               </Button>
           )}
-          <Button type="submit" className="w-full whitespace-normal text-center h-auto">
-            <PlusCircle className="w-4 h-4 mr-2"/> Add Note / Update Song Details
+          <Button type="submit" className="w-full whitespace-normal text-center h-auto" disabled={isUploadingPhoto}>
+            {isUploadingPhoto ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <PlusCircle className="w-4 h-4 mr-2"/>}
+            {isUploadingPhoto ? "Uploading Photo..." : "Add Note / Update Details"}
           </Button>
         </CardFooter>
       </form>

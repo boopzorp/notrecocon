@@ -155,11 +155,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const formattedDate = format(date, 'yyyy-MM-dd');
     try {
       const logDocRef = doc(db, FIRESTORE_LOGS_COLLECTION_ID, formattedDate);
+      // Ensure all fields are present, defaulting if necessary
       const dataToSave: DailyLog = {
         editorNotes: logData.editorNotes || [],
         spotifyLink: typeof logData.spotifyLink === 'string' ? logData.spotifyLink : "",
         songTitle: typeof logData.songTitle === 'string' ? logData.songTitle : "",
         partnerNotes: logData.partnerNotes || [],
+        photoUrl: typeof logData.photoUrl === 'string' ? logData.photoUrl : "", // Default to empty string if undefined
+        photoDataAiHint: typeof logData.photoDataAiHint === 'string' ? logData.photoDataAiHint : "", // Default to empty string
       };
       await setDoc(logDocRef, dataToSave);
       dispatch({ type: 'UPSERT_LOG', payload: { date: formattedDate, log: dataToSave } });

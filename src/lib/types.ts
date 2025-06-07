@@ -4,6 +4,8 @@ export interface DailyLog {
   spotifyLink: string;
   songTitle?: string;
   partnerNotes?: string[];
+  photoUrl?: string;
+  photoDataAiHint?: string;
 }
 
 export interface AppSettings {
