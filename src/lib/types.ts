@@ -1,4 +1,9 @@
 
+export interface MoodEntry {
+  editor?: string; // emoji character
+  partner?: string; // emoji character
+}
+
 export interface DailyLog {
   editorNotes?: string[];
   spotifyLink: string;
@@ -6,6 +11,7 @@ export interface DailyLog {
   partnerNotes?: string[];
   promptForPartner?: string; // Prompt from editor to partner
   promptForEditor?: string;   // Prompt from partner to editor
+  moods?: MoodEntry;
 }
 
 export interface AppSettings {

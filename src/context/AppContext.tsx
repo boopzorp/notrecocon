@@ -3,7 +3,7 @@
 
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useEffect, useReducer, useCallback } from 'react';
-import type { AppData, DailyLog, AppSettings } from '@/lib/types';
+import type { AppData, DailyLog, AppSettings, MoodEntry } from '@/lib/types';
 import { format, isValid, parseISO } from 'date-fns';
 import { db, app as firebaseApp } from '@/lib/firebase';
 import { doc, getDoc, setDoc, collection, getDocs, writeBatch, deleteDoc } from 'firebase/firestore';
@@ -16,7 +16,7 @@ const FIRESTORE_CONFIG_COLLECTION_ID = 'config';
 
 interface AppState extends AppData {
   isInitialized: boolean;
-  userRole: 'editor' | 'partner' | null; 
+  userRole: 'editor' | 'partner' | null;
   editorCode: string | null;
   partnerCode: string | null;
 }
@@ -33,7 +33,7 @@ const initialState: AppState = {
   internshipEnd: null,
   logs: {},
   isInitialized: false,
-  userRole: null, 
+  userRole: null,
   editorCode: null,
   partnerCode: null,
 };
@@ -62,7 +62,7 @@ function appReducer(state: AppState, action: Action): AppState {
         editorCode: action.payload.settings.editorCode || null,
         partnerCode: action.payload.settings.partnerCode || null,
         logs: action.payload.logs,
-        userRole: action.payload.userRole, 
+        userRole: action.payload.userRole,
         isInitialized: true,
       };
     case 'SET_INTERNSHIP_DATES':
@@ -83,8 +83,8 @@ function appReducer(state: AppState, action: Action): AppState {
       return {
         ...initialState,
         isInitialized: true,
-        userRole: null, 
-        editorCode: state.editorCode, 
+        userRole: null,
+        editorCode: state.editorCode,
         partnerCode: state.partnerCode,
       };
     case 'SET_USER_ROLE':
@@ -100,9 +100,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const loadData = async () => {
       try {
+        console.log(`[AppContext] Using Firebase Project ID: ${firebaseApp.options.projectId}`);
         const settingsDocPath = `${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}`;
         console.log(`[AppContext] Attempting to load settings from Firestore path: ${settingsDocPath}`);
-        
+
         const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
         const settingsDocSnap = await getDoc(settingsDocRef);
 
@@ -110,18 +111,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         if (settingsDocSnap.exists()) {
           appSettings = settingsDocSnap.data() as AppSettings;
           console.log("[AppContext] Loaded appSettings from Firestore:", appSettings);
+          console.log("[AppContext] settingsDocSnap.exists():", settingsDocSnap.exists());
         } else {
           console.warn(`[AppContext] appSettings document does not exist at path: ${settingsDocPath}. Ensure it's created with editorCode and partnerCode.`);
+          console.log("[AppContext] settingsDocSnap.exists():", settingsDocSnap.exists());
         }
-        
+
         const logsCollectionRef = collection(db, FIRESTORE_LOGS_COLLECTION_ID);
         const logsSnapshot = await getDocs(logsCollectionRef);
         const fetchedLogs: Record<string, DailyLog> = {};
         logsSnapshot.forEach((logDoc) => {
           fetchedLogs[logDoc.id] = logDoc.data() as DailyLog;
         });
+        console.log("[AppContext] Fetched logs:", fetchedLogs);
 
         const storedUserRole = localStorage.getItem(USER_ROLE_LOCAL_STORAGE_KEY) as 'editor' | 'partner' | null;
+        console.log("[AppContext] Stored user role from localStorage:", storedUserRole);
+
 
         dispatch({
           type: 'INITIALIZE_APP',
@@ -134,8 +140,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       } catch (error) {
         console.error("[AppContext] Failed to load data from Firestore or localStorage", error);
         const storedUserRole = localStorage.getItem(USER_ROLE_LOCAL_STORAGE_KEY) as 'editor' | 'partner' | null;
-        // Attempt to initialize with what we have, or default to uninitialized state
-        dispatch({ type: 'INITIALIZE_APP', payload: { settings: {}, logs: {}, userRole: storedUserRole } }); 
+        dispatch({ type: 'INITIALIZE_APP', payload: { settings: {}, logs: {}, userRole: storedUserRole } });
       }
     };
     loadData();
@@ -156,7 +161,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const formattedEndDate = format(endDate, 'yyyy-MM-dd');
     try {
       const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
-      // We only want to update the dates, not other codes potentially in settings
       await setDoc(settingsDocRef, { internshipStart: formattedStartDate, internshipEnd: formattedEndDate }, { merge: true });
       dispatch({ type: 'SET_INTERNSHIP_DATES', payload: { startDate, endDate } });
     } catch (error) {
@@ -168,8 +172,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const formattedDate = format(date, 'yyyy-MM-dd');
     try {
       const logDocRef = doc(db, FIRESTORE_LOGS_COLLECTION_ID, formattedDate);
-      
-      // Ensure all fields are at least initialized to avoid Firestore errors with `undefined`
+
       const dataToSave: DailyLog = {
         editorNotes: logData.editorNotes || [],
         spotifyLink: typeof logData.spotifyLink === 'string' ? logData.spotifyLink : "",
@@ -177,9 +180,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         partnerNotes: logData.partnerNotes || [],
         promptForPartner: typeof logData.promptForPartner === 'string' ? logData.promptForPartner : "",
         promptForEditor: typeof logData.promptForEditor === 'string' ? logData.promptForEditor : "",
+        moods: { // Ensure moods object and its sub-properties are defined or explicitly null/undefined if allowed
+            editor: logData.moods?.editor || undefined,
+            partner: logData.moods?.partner || undefined,
+        }
       };
-      
-      await setDoc(logDocRef, dataToSave, { merge: true }); // Use merge:true to update existing fields
+
+      await setDoc(logDocRef, dataToSave, { merge: true });
       dispatch({ type: 'UPSERT_LOG', payload: { date: formattedDate, log: dataToSave } });
     } catch (error) {
       console.error("Failed to save log to Firestore:", error);
@@ -203,10 +210,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       logsSnapshot.docs.forEach((logDoc) => {
         batch.delete(logDoc.ref);
       });
-      // Also clear internship dates from Firestore settings, but keep access codes
       const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
       await setDoc(settingsDocRef, { internshipStart: null, internshipEnd: null }, { merge: true });
-      
+
       await batch.commit();
 
       dispatch({ type: 'RESET_DATA_STATE' });
@@ -220,7 +226,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       console.warn("[AppContext] Attempted login before app context initialized or settings loaded.");
       return false;
     }
-    
+
     if (!state.editorCode && !state.partnerCode) {
       console.warn("[AppContext] Editor/Partner codes not found in loaded app settings. Check Firestore 'config/appSettings'.");
       return false;

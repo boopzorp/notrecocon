@@ -8,8 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import type { DailyLog } from "@/lib/types";
-import { Music2, Save, BookOpen, Lightbulb, Trash2, PenLine, Gift, MessageSquarePlus, MessagesSquare, PlusCircle, Search, Loader2, MessageCircleQuestion, MessageCircleHeart } from 'lucide-react';
+import type { DailyLog, MoodEntry } from "@/lib/types";
+import { Music2, Save, BookOpen, Lightbulb, Trash2, PenLine, Gift, MessageSquarePlus, MessagesSquare, PlusCircle, Search, Loader2, MessageCircleQuestion, MessageCircleHeart, Smile } from 'lucide-react';
 import { generateSuggestedReplies, type SuggestedRepliesOutput } from '@/ai/flows/suggested-replies';
 import { extractSongDetails, type ExtractSongDetailsOutput } from '@/ai/flows/extract-song-details-flow';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
@@ -24,6 +24,10 @@ interface DailyDetailsCardProps {
   mode: 'editor' | 'reader';
 }
 
+const MOOD_OPTIONS = ['😊', '😢', '😠', '😴', '🎉', '🤔', '💖', '🙂', '😟'] as const;
+type MoodEmoji = typeof MOOD_OPTIONS[number];
+
+
 export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: DailyDetailsCardProps) {
   const [newEditorNoteText, setNewEditorNoteText] = useState('');
   const [spotifyLink, setSpotifyLink] = useState('');
@@ -31,6 +35,8 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   const [newPartnerNoteText, setNewPartnerNoteText] = useState('');
   const [promptForPartner, setPromptForPartner] = useState('');
   const [promptForEditor, setPromptForEditor] = useState('');
+  const [currentEditorMood, setCurrentEditorMood] = useState<MoodEmoji | undefined>(undefined);
+  const [currentPartnerMood, setCurrentPartnerMood] = useState<MoodEmoji | undefined>(undefined);
 
 
   const [suggestedReplies, setSuggestedReplies] = useState<string[]>([]);
@@ -49,6 +55,8 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     setNewPartnerNoteText('');
     setPromptForPartner(log?.promptForPartner || '');
     setPromptForEditor(log?.promptForEditor || '');
+    setCurrentEditorMood(log?.moods?.editor as MoodEmoji || undefined);
+    setCurrentPartnerMood(log?.moods?.partner as MoodEmoji || undefined);
     setSuggestedReplies([]);
     setErrorSuggestions(null);
     setSongDetailsError(null);
@@ -58,9 +66,9 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
 
   const handleEditorSave = async (e: FormEvent) => {
     e.preventDefault();
-    
+
     const currentLogSnapshot: DailyLog = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] };
-    
+
     const updatedLog: DailyLog = {
       ...currentLogSnapshot,
       editorNotes: newEditorNoteText.trim()
@@ -68,16 +76,19 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
         : (currentLogSnapshot.editorNotes || []),
       spotifyLink: spotifyLink.trim(),
       songTitle: songTitle.trim(),
-      promptForPartner: promptForPartner.trim(), // Save editor's prompt for partner
-      partnerNotes: currentLogSnapshot.partnerNotes || [], // Keep existing partner notes
-      promptForEditor: currentLogSnapshot.promptForEditor || '', // Keep existing partner's prompt for editor
+      promptForPartner: promptForPartner.trim(),
+      partnerNotes: currentLogSnapshot.partnerNotes || [],
+      promptForEditor: currentLogSnapshot.promptForEditor || '',
+      moods: {
+        editor: currentEditorMood,
+        partner: currentLogSnapshot.moods?.partner,
+      }
     };
 
     onSave(selectedDate, updatedLog);
     setNewEditorNoteText('');
-    // Don't clear promptForPartner here, allow it to persist unless changed
   };
-  
+
   const handlePartnerSave = async (e: FormEvent) => {
     e.preventDefault();
 
@@ -86,22 +97,24 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     const updatedLog: DailyLog = {
       ...currentLogSnapshot,
       partnerNotes: newPartnerNoteText.trim() ? [...(currentLogSnapshot.partnerNotes || []), newPartnerNoteText] : (currentLogSnapshot.partnerNotes || []),
-      promptForEditor: promptForEditor.trim(), // Save partner's prompt for editor
-      // Keep existing editor details
+      promptForEditor: promptForEditor.trim(),
       editorNotes: currentLogSnapshot.editorNotes || [],
       spotifyLink: currentLogSnapshot.spotifyLink || '',
       songTitle: currentLogSnapshot.songTitle || '',
       promptForPartner: currentLogSnapshot.promptForPartner || '',
+      moods: {
+        editor: currentLogSnapshot.moods?.editor,
+        partner: currentPartnerMood,
+      }
     };
 
     onSave(selectedDate, updatedLog);
     setNewPartnerNoteText('');
-     // Don't clear promptForEditor here, allow it to persist unless changed
   };
 
   const handleDeleteEntireEntry = async () => {
     if (onDelete) {
-      onDelete(selectedDate); 
+      onDelete(selectedDate);
     }
   };
 
@@ -172,6 +185,40 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     }
   };
 
+  const renderMoodSelector = (currentMood: MoodEmoji | undefined, onSelectMood: (mood: MoodEmoji) => void, label: string) => (
+    <div className="space-y-2">
+      <Label className="flex items-center font-semibold"><Smile className="w-4 h-4 mr-2 text-accent"/> {label}</Label>
+      <div className="flex flex-wrap gap-2">
+        {MOOD_OPTIONS.map(moodEmoji => (
+          <Button
+            key={moodEmoji}
+            type="button"
+            variant={currentMood === moodEmoji ? "default" : "outline"}
+            size="icon"
+            onClick={() => onSelectMood(moodEmoji)}
+            className={`text-2xl p-2 rounded-full w-12 h-12 ${currentMood === moodEmoji ? 'border-2 border-primary-foreground ring-2 ring-primary' : ''}`}
+            aria-label={`Select mood: ${moodEmoji}`}
+          >
+            {moodEmoji}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderTheirMood = (mood: MoodEmoji | undefined, label: string) => {
+    if (!mood) return null;
+    return (
+      <div className="p-3 border rounded-md bg-secondary/30 shadow-sm">
+        <Label className="text-muted-foreground font-semibold flex items-center mb-1">
+          <Smile className="w-4 h-4 mr-2 text-accent"/> {label}
+        </Label>
+        <p className="text-3xl">{mood}</p>
+      </div>
+    );
+  };
+
+
   const formattedDateDisplay = selectedDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
   // Reader Mode (Partner's View)
@@ -180,11 +227,12 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle className="font-headline text-2xl text-primary">{formattedDateDisplay}</CardTitle>
-          {(!log || (!log.editorNotes?.length && !log.spotifyLink && !log.partnerNotes?.length && !log.promptForPartner && !log.promptForEditor)) && (
+          {(!log || (!log.editorNotes?.length && !log.spotifyLink && !log.partnerNotes?.length && !log.promptForPartner && !log.promptForEditor && !log.moods?.editor && !log.moods?.partner)) && (
              <CardDescription>No entries for this day yet. Be the first to leave a note or a prompt!</CardDescription>
           )}
         </CardHeader>
         <CardContent className="space-y-6">
+          {renderTheirMood(log?.moods?.editor as MoodEmoji | undefined, "Their Mood Today:")}
           {log?.promptForPartner && (
             <div className="p-3 border rounded-md bg-secondary/30 shadow-sm">
               <Label className="text-muted-foreground font-semibold flex items-center mb-1"><MessageCircleQuestion className="w-4 h-4 mr-2 text-accent"/>Their Prompt for You:</Label>
@@ -232,7 +280,8 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
             </div>
           )}
 
-          <form onSubmit={handlePartnerSave} className="space-y-3 pt-6 border-t">
+          <form onSubmit={handlePartnerSave} className="space-y-4 pt-6 border-t">
+            {renderMoodSelector(currentPartnerMood, setCurrentPartnerMood, "Your Mood Today:")}
             <div className="space-y-2">
               <Label htmlFor="promptForEditor" className="flex items-center font-semibold text-base"><MessageCircleHeart className="w-5 h-5 mr-2 text-accent"/>Your Prompt for Them:</Label>
               <Textarea
@@ -256,9 +305,9 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               rows={3}
               className="bg-white"
             />
-             <Button type="submit" className="w-full" disabled={!newPartnerNoteText.trim() && !promptForEditor.trim()}>
+             <Button type="submit" className="w-full" disabled={!newPartnerNoteText.trim() && !promptForEditor.trim() && !currentPartnerMood}>
                 <Save className="w-4 h-4 mr-2"/>
-                Add My Note & Prompt
+                Add My Note, Prompt & Mood
               </Button>
           </form>
         </CardContent>
@@ -272,9 +321,11 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
       <form onSubmit={handleEditorSave}>
         <CardHeader>
           <CardTitle className="font-headline text-2xl text-primary">Log for {formattedDateDisplay}</CardTitle>
-          <CardDescription>Share your thoughts, a song, prompts, and see notes from your partner.</CardDescription>
+          <CardDescription>Share your thoughts, mood, a song, prompts, and see notes from your partner.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {renderMoodSelector(currentEditorMood, setCurrentEditorMood, "Your Mood Today:")}
+          {renderTheirMood(log?.moods?.partner as MoodEmoji | undefined, "Their Mood Today:")}
 
           {log?.promptForEditor && (
              <div className="p-3 border rounded-md bg-secondary/50 shadow-sm">
@@ -326,9 +377,9 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
                 value={spotifyLink}
                 onChange={(e) => {
                   setSpotifyLink(e.target.value);
-                  setSongDetailsError(null); 
+                  setSongDetailsError(null);
                 }}
-                onBlur={handleFetchSongDetailsFromLink} 
+                onBlur={handleFetchSongDetailsFromLink}
                 placeholder="https://open.spotify.com/track/..."
                 className="flex-grow"
               />
@@ -356,7 +407,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               placeholder="e.g., Sunflower (auto-filled from link)"
             />
           </div>
-          
+
           {log?.partnerNotes && log.partnerNotes.length > 0 && (
             <div className="space-y-2 pt-4 border-t">
                 <Label className="text-muted-foreground font-semibold flex items-center"><Gift className="w-5 h-5 mr-2 text-accent"/>Notes From Your Partner:</Label>
@@ -395,14 +446,26 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
 
         </CardContent>
         <CardFooter className="flex flex-col gap-3">
-          {onDelete && (log?.editorNotes?.length || log?.spotifyLink || log?.partnerNotes?.length || log?.songTitle || log?.promptForEditor || log?.promptForPartner) && (
+          {onDelete && (log?.editorNotes?.length || log?.spotifyLink || log?.partnerNotes?.length || log?.songTitle || log?.promptForEditor || log?.promptForPartner || log?.moods?.editor || log?.moods?.partner) && (
              <Button type="button" variant="destructive" onClick={handleDeleteEntireEntry} className="w-full">
                 <Trash2 className="w-4 h-4 mr-2"/> Delete Entire Day's Entry
               </Button>
           )}
-          <Button type="submit" className="w-full whitespace-normal text-center h-auto" disabled={!newEditorNoteText.trim() && !spotifyLink.trim() && !songTitle.trim() && !promptForPartner.trim() && !(log?.editorNotes?.length || log?.spotifyLink || log?.songTitle || log?.promptForPartner)}>
+          <Button 
+            type="submit" 
+            className="w-full whitespace-normal text-center h-auto" 
+            disabled={
+              !newEditorNoteText.trim() && 
+              !spotifyLink.trim() && 
+              !songTitle.trim() && 
+              !promptForPartner.trim() && 
+              !currentEditorMood &&
+              // Disable if nothing new AND nothing existing to simply re-save/update mood on
+              !(log?.editorNotes?.length || log?.spotifyLink || log?.songTitle || log?.promptForPartner || log?.moods?.editor)
+            }
+          >
             <PlusCircle className="w-4 h-4 mr-2"/>
-            Add Note / Update Details & Prompt
+            Add Note / Update Details, Prompt & Mood
           </Button>
         </CardFooter>
       </form>
