@@ -3,38 +3,34 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useAppContext } from '@/context/AppContext';
 import { AppContainer, PageSection } from '@/components/AppContainer';
-import { EventProgressBar } from '@/components/EventProgressBar'; // Renamed
+import { EventProgressBar } from '@/components/EventProgressBar';
 import { AppCalendarView } from '@/components/AppCalendarView';
 import { DailyDetailsCard } from '@/components/DailyDetailsCard';
 import type { DailyLog } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
-import { AlertCircle, Settings } from 'lucide-react';
+import { AlertCircle, Settings, Briefcase } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import Link from 'next/link';
 import { parseISO, format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 
 export default function ReaderPage() {
-  const { eventName, eventStartDate, eventEndDate, logs, getLog, upsertLog, isConfigured, isInitialized, userRole } = useAppContext(); // Updated context fields
+  const { 
+    selectedEvent, 
+    logs, 
+    getLog, 
+    upsertLog, 
+    isEventSelected, 
+    isInitialized, 
+    userRole,
+    isLoadingLogs
+  } = useAppContext();
   const router = useRouter();
   const { toast } = useToast();
 
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(() => {
-    if (eventStartDate) {
-      const start = parseISO(eventStartDate);
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      if (eventEndDate) {
-        const end = parseISO(eventEndDate);
-        if (today >= start && today <= end) return today;
-      }
-      return start;
-    }
-    return undefined;
-  });
-
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
 
   useEffect(() => {
     if (isInitialized) {
@@ -42,32 +38,40 @@ export default function ReaderPage() {
         router.replace('/safe-space');
         return; 
       }
+      if (!selectedEvent) {
+        router.replace('/events');
+        return;
+      }
+      // Initialize selectedDate based on selectedEvent
+      if (selectedEvent && selectedEvent.startDate) {
+        const start = parseISO(selectedEvent.startDate);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        let initialDate = start;
+        if (selectedEvent.endDate) {
+          const end = parseISO(selectedEvent.endDate);
+          if (today >= start && today <= end) {
+            initialDate = today;
+          }
+        }
+        setSelectedDate(initialDate);
+      }
     }
-  }, [isInitialized, userRole, isConfigured, router]);
+  }, [isInitialized, userRole, selectedEvent, router]);
 
   useEffect(() => {
-    if (eventStartDate && eventEndDate && selectedDate) {
-      const start = parseISO(eventStartDate);
-      const end = parseISO(eventEndDate);
+    // Adjust selectedDate if it falls outside the selectedEvent's range
+    if (selectedEvent && selectedEvent.startDate && selectedEvent.endDate && selectedDate) {
+      const start = parseISO(selectedEvent.startDate);
+      const end = parseISO(selectedEvent.endDate);
       if (selectedDate < start || selectedDate > end) {
         setSelectedDate(start);
       }
-    } else if (eventStartDate && !selectedDate) {
-      const start = parseISO(eventStartDate);
-      const today = new Date();
-      today.setHours(0,0,0,0);
-       if (eventEndDate) {
-        const end = parseISO(eventEndDate);
-        if (today >= start && today <= end) {
-          setSelectedDate(today);
-          return;
-        }
-      }
-      setSelectedDate(start);
     }
-  }, [eventStartDate, eventEndDate, selectedDate]);
+  }, [selectedEvent, selectedDate]);
 
-  if (!isInitialized || !userRole) { 
+
+  if (!isInitialized || !userRole || isLoadingLogs) { 
     return (
       <AppContainer showHomeButton={true}>
         <div className="flex justify-center items-center h-64">
@@ -77,19 +81,19 @@ export default function ReaderPage() {
     );
   }
 
-  if (!isConfigured()) {
+  if (!isEventSelected() || !selectedEvent) {
      return (
       <AppContainer showHomeButton={true}>
         <Card className="my-8 text-center">
           <CardContent className="p-6 space-y-4">
-            <AlertCircle className="w-12 h-12 mx-auto text-primary" />
-            <h3 className="text-2xl font-semibold text-primary">Waiting for Setup</h3>
+            <Briefcase className="w-12 h-12 mx-auto text-primary" />
+            <h3 className="text-2xl font-semibold text-primary">No Event Selected</h3>
             <p className="text-muted-foreground">
-              The app isn't quite ready yet. Please ask the editor to configure the event details.
+             Please select an event from the events page to view entries.
             </p>
              <Button asChild variant="outline">
-              <Link href="/" className="flex items-center gap-2">
-                Go Home
+              <Link href="/events" className="flex items-center gap-2">
+                <Briefcase className="w-4 h-4"/> Go to Events
               </Link>
             </Button>
           </CardContent>
@@ -100,7 +104,7 @@ export default function ReaderPage() {
   
   const currentLog = selectedDate ? getLog(selectedDate) : undefined;
 
-  const handleSavePartnerNote = (date: Date, logWithPartnerNotes: DailyLog) => {
+  const handleSavePartnerNote = (date: Date, logWithPartnerNotes: Omit<DailyLog, 'eventId'>) => {
     upsertLog(date, logWithPartnerNotes);
     toast({
       title: "New Note Added!",
@@ -111,15 +115,19 @@ export default function ReaderPage() {
 
   return (
     <AppContainer showHomeButton={true}>
-      <PageSection title="Reader's Haven" titleClassName="text-accent">
-        <EventProgressBar eventName={eventName} eventStartDateString={eventStartDate} eventEndDateString={eventEndDate} />
+      <PageSection title={`${selectedEvent.name} - Reader's Haven`} titleClassName="text-accent">
+        <EventProgressBar 
+            eventName={selectedEvent.name} 
+            eventStartDateString={selectedEvent.startDate} 
+            eventEndDateString={selectedEvent.endDate} 
+        />
       </PageSection>
 
       <div className="grid md:grid-cols-2 gap-8 items-start">
-        <PageSection title="Our Calendar" titleClassName="text-primary">
+        <PageSection title="Event Calendar" titleClassName="text-primary">
           <AppCalendarView
-            eventStartDateString={eventStartDate}
-            eventEndDateString={eventEndDate}
+            eventStartDateString={selectedEvent.startDate}
+            eventEndDateString={selectedEvent.endDate}
             logs={logs}
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}

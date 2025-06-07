@@ -60,7 +60,7 @@ const AppContext = createContext<
     deleteEvent: (eventId: string) => Promise<boolean>;
     upsertLog: (date: Date, log: Omit<DailyLog, 'eventId'>) => Promise<void>;
     getLog: (date: Date) => DailyLog | undefined;
-    isEventSelected: () => boolean;
+    isEventSelected: () => boolean; // Renamed from isConfigured
     resetAllAppData: () => Promise<void>;
     setUserRole: (role: 'editor' | 'partner' | null) => void;
     attemptLoginWithCode: (code: string) => boolean;
@@ -220,10 +220,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const logsSnapshot = await getDocs(logsQuery);
         const fetchedLogs: Record<string, DailyLog> = {};
         logsSnapshot.forEach((logDoc) => {
-          const logData = logDoc.data() as Omit<DailyLog, 'eventId'>; // Data from doc doesn't have eventId as top-level field
+          const logData = logDoc.data() as Omit<DailyLog, 'eventId'>; 
           fetchedLogs[format(parseISO(logDoc.id.split('_')[0]), 'yyyy-MM-dd')] = {
             ...logData,
-            eventId: state.selectedEvent!.id // Add eventId here
+            eventId: state.selectedEvent!.id 
           };
         });
         dispatch({ type: 'LOAD_LOGS_SUCCESS', payload: fetchedLogs });
@@ -232,9 +232,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         dispatch({ type: 'LOAD_LOGS_FAILURE' });
       }
     };
-    if (state.isInitialized && state.selectedEvent) { // Only fetch if initialized and event selected
+    if (state.isInitialized && state.selectedEvent) { 
         fetchLogsForSelectedEvent();
-    } else if (state.isInitialized && !state.selectedEvent) { // Clear logs if no event selected
+    } else if (state.isInitialized && !state.selectedEvent) { 
         dispatch({ type: 'LOAD_LOGS_SUCCESS', payload: {} });
     }
   }, [state.selectedEvent, state.isInitialized]);
@@ -293,8 +293,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       await setDoc(eventDocRef, updateData, { merge: true });
       
       const updatedEventFull: Event = { 
-        ...(state.events.find(e => e.id === eventId) as Event), // get existing full event
-        ...updateData // apply updates
+        ...(state.events.find(e => e.id === eventId) as Event), 
+        ...updateData 
       };
 
       dispatch({ type: 'UPDATE_EVENT_SUCCESS', payload: updatedEventFull });
@@ -312,9 +312,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
     try {
       const batch = writeBatch(db);
-      // Delete the event document
       batch.delete(doc(db, FIRESTORE_EVENTS_COLLECTION_ID, eventId));
-      // Delete all logs associated with this event
       const logsQuery = query(collection(db, FIRESTORE_LOGS_COLLECTION_ID), where("eventId", "==", eventId));
       const logsSnapshot = await getDocs(logsQuery);
       logsSnapshot.docs.forEach((logDoc) => batch.delete(logDoc.ref));
@@ -441,6 +439,3 @@ export const useAppContext = () => {
   }
   return context;
 };
-
-
-    
