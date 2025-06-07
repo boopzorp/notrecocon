@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 interface AppCalendarViewProps {
   eventStartDateString: string | null;
   eventEndDateString: string | null;
+  isEvergreen?: boolean;
   logs: Record<string, DailyLog>;
   selectedDate: Date | undefined;
   onSelectDate: (date: Date | undefined) => void;
@@ -19,30 +20,35 @@ interface AppCalendarViewProps {
 export function AppCalendarView({
   eventStartDateString,
   eventEndDateString,
+  isEvergreen,
   logs,
   selectedDate,
   onSelectDate,
   mode
 }: AppCalendarViewProps) {
 
-  const startDate = eventStartDateString ? parseISO(eventStartDateString) : null;
-  const endDate = eventEndDateString ? parseISO(eventEndDateString) : null;
+  const startDate = !isEvergreen && eventStartDateString ? parseISO(eventStartDateString) : null;
+  const endDate = !isEvergreen && eventEndDateString ? parseISO(eventEndDateString) : null;
 
-  if (!startDate || !endDate || !isValid(startDate) || !isValid(endDate)) {
+  if (!isEvergreen && (!startDate || !endDate || !isValid(startDate) || !isValid(endDate))) {
     return <p className="text-muted-foreground text-center py-4">Calendar will appear once event dates are set.</p>;
   }
 
   const formatDay: DateFormatter = (day) => format(day, "d");
 
-  const modifiers: DayModifiers = {
-    disabled: [
-      { before: startDate },
-      { after: endDate }
-    ],
+  const dayModifiers: DayModifiers = {
     hasLog: Object.keys(logs).map(dateStr => parseISO(dateStr)),
     today: new Date(),
     selected: selectedDate ? selectedDate : new Date(0), 
   };
+
+  if (!isEvergreen && startDate && endDate) {
+    dayModifiers.disabled = [
+      { before: startDate },
+      { after: endDate }
+    ];
+  }
+
 
   const modifiersClassNames = {
     hasLog: 'bg-accent/30 rounded-full font-bold',
@@ -50,18 +56,18 @@ export function AppCalendarView({
     selected: 'bg-primary text-primary-foreground rounded-full',
   };
 
-  const initialMonth = selectedDate || startDate;
+  const initialMonth = selectedDate || (startDate || new Date());
 
   return (
     <Calendar
       mode="single"
       selected={selectedDate}
       onSelect={onSelectDate}
-      fromDate={startDate}
-      toDate={endDate}
+      fromDate={startDate || undefined} // Pass undefined if null
+      toDate={endDate || undefined}   // Pass undefined if null
       month={initialMonth}
       formatters={{ formatDay }}
-      modifiers={modifiers}
+      modifiers={dayModifiers}
       modifiersClassNames={modifiersClassNames}
       className="rounded-md border shadow-md bg-card p-4 w-full"
       classNames={{
@@ -80,7 +86,9 @@ export function AppCalendarView({
           "last:[&:has([aria-selected])]:rounded-r-md"
         ),
       }}
-      showOutsideDays={false} 
+      showOutsideDays={isEvergreen ? true : false} // Show outside days for evergreen for easier navigation
     />
   );
 }
+
+    

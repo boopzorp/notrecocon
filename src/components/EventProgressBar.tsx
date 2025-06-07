@@ -5,15 +5,16 @@ import { Progress } from "@/components/ui/progress";
 import { differenceInCalendarDays, format, isValid, parseISO } from "date-fns";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Target } from "lucide-react";
+import { Target, Activity } from "lucide-react"; // Added Activity icon
 
 interface EventProgressBarProps {
   eventName: string | null;
   eventStartDateString: string | null;
   eventEndDateString: string | null;
+  isEvergreen?: boolean;
 }
 
-export function EventProgressBar({ eventName, eventStartDateString, eventEndDateString }: EventProgressBarProps) {
+export function EventProgressBar({ eventName, eventStartDateString, eventEndDateString, isEvergreen }: EventProgressBarProps) {
   const [progress, setProgress] = useState(0);
   const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
 
@@ -21,6 +22,12 @@ export function EventProgressBar({ eventName, eventStartDateString, eventEndDate
   const endDate = eventEndDateString ? parseISO(eventEndDateString) : null;
 
   useEffect(() => {
+    if (isEvergreen) {
+      setProgress(50); // Or any other representation for ongoing
+      setDaysRemaining(null); // No specific days remaining for evergreen
+      return;
+    }
+
     if (startDate && endDate && isValid(startDate) && isValid(endDate)) {
       const today = new Date();
       today.setHours(0,0,0,0); 
@@ -32,7 +39,9 @@ export function EventProgressBar({ eventName, eventStartDateString, eventEndDate
 
       if (totalDays > 0) {
         setProgress((daysPassed / totalDays) * 100);
-      } else {
+      } else if (totalDays === 0) { // Event is a single day
+        setProgress(today >= startDate ? 100 : 0);
+      } else { // Should not happen if endDate >= startDate
         setProgress(today >= endDate ? 100 : 0);
       }
       
@@ -43,9 +52,25 @@ export function EventProgressBar({ eventName, eventStartDateString, eventEndDate
       setProgress(0);
       setDaysRemaining(null);
     }
-  }, [startDate, endDate]);
+  }, [startDate, endDate, isEvergreen]);
 
-  const progressBarTitle = eventName ? `Countdown for: ${eventName}` : "Our Countdown";
+  const progressBarTitle = eventName ? `${isEvergreen ? '' : 'Countdown for: '}${eventName}` : "Our Countdown";
+
+  if (isEvergreen) {
+    return (
+      <Card className="shadow-md">
+        <CardHeader>
+          <CardTitle className="font-headline text-2xl text-primary flex items-center">
+            <Activity className="w-6 h-6 mr-2"/>
+            {eventName || "Daily Life"}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground text-center text-lg">An ongoing space for our daily shares.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (!startDate || !endDate || !isValid(startDate) || !isValid(endDate)) {
     return (
@@ -57,7 +82,7 @@ export function EventProgressBar({ eventName, eventStartDateString, eventEndDate
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground">Please set the event name and dates in the Setup page to see the progress.</p>
+          <p className="text-muted-foreground">Event dates are not set for this event.</p>
         </CardContent>
       </Card>
     );
@@ -84,8 +109,11 @@ export function EventProgressBar({ eventName, eventStartDateString, eventEndDate
             (daysRemaining > 0 ? `${daysRemaining} day${daysRemaining === 1 ? '' : 's'} until it's here!` : "The day is here!") :
             "Calculating..."}
         </div>
-        {progress === 100 && <p className="text-center text-lg font-bold text-primary">The event has concluded or is today! 🎉</p>}
+        {progress >= 100 && differenceInCalendarDays(new Date(), endDate) > 0 && <p className="text-center text-lg font-bold text-destructive">This event has concluded! 😢</p>}
+        {progress >= 100 && differenceInCalendarDays(new Date(), endDate) <= 0 && <p className="text-center text-lg font-bold text-primary">The event is today or has just concluded! 🎉</p>}
       </CardContent>
     </Card>
   );
 }
+
+    

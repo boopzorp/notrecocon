@@ -11,7 +11,7 @@ import { AppCalendarView } from '@/components/AppCalendarView';
 import { DailyDetailsCard } from '@/components/DailyDetailsCard';
 import type { DailyLog } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
-import { AlertCircle, Settings, Briefcase } from 'lucide-react';
+import { Briefcase } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { parseISO, format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
@@ -43,15 +43,19 @@ export default function ReaderPage() {
         return;
       }
       // Initialize selectedDate based on selectedEvent
-      if (selectedEvent && selectedEvent.startDate) {
-        const start = parseISO(selectedEvent.startDate);
+      if (selectedEvent) {
         const today = new Date();
         today.setHours(0,0,0,0);
-        let initialDate = start;
-        if (selectedEvent.endDate) {
-          const end = parseISO(selectedEvent.endDate);
-          if (today >= start && today <= end) {
-            initialDate = today;
+        let initialDate = today; // Default to today for evergreen or if today is in range
+
+        if (!selectedEvent.isEvergreen && selectedEvent.startDate) {
+          const start = parseISO(selectedEvent.startDate);
+          initialDate = start; // Default to start date for non-evergreen
+          if (selectedEvent.endDate) {
+            const end = parseISO(selectedEvent.endDate);
+            if (today >= start && today <= end) {
+              initialDate = today; // If today is within range, use today
+            }
           }
         }
         setSelectedDate(initialDate);
@@ -60,8 +64,8 @@ export default function ReaderPage() {
   }, [isInitialized, userRole, selectedEvent, router]);
 
   useEffect(() => {
-    // Adjust selectedDate if it falls outside the selectedEvent's range
-    if (selectedEvent && selectedEvent.startDate && selectedEvent.endDate && selectedDate) {
+    // Adjust selectedDate if it falls outside the selectedEvent's range (for non-evergreen events)
+    if (selectedEvent && !selectedEvent.isEvergreen && selectedEvent.startDate && selectedEvent.endDate && selectedDate) {
       const start = parseISO(selectedEvent.startDate);
       const end = parseISO(selectedEvent.endDate);
       if (selectedDate < start || selectedDate > end) {
@@ -120,6 +124,7 @@ export default function ReaderPage() {
             eventName={selectedEvent.name} 
             eventStartDateString={selectedEvent.startDate} 
             eventEndDateString={selectedEvent.endDate} 
+            isEvergreen={selectedEvent.isEvergreen}
         />
       </PageSection>
 
@@ -128,6 +133,7 @@ export default function ReaderPage() {
           <AppCalendarView
             eventStartDateString={selectedEvent.startDate}
             eventEndDateString={selectedEvent.endDate}
+            isEvergreen={selectedEvent.isEvergreen}
             logs={logs}
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}
@@ -155,3 +161,5 @@ export default function ReaderPage() {
     </AppContainer>
   );
 }
+
+    
