@@ -1,18 +1,9 @@
 
-export interface PhotoEntry {
-  url: string;
-  hint: string;
-}
-
 export interface DailyLog {
   editorNotes?: string[];
   spotifyLink: string;
   songTitle?: string;
   partnerNotes?: string[];
-  photos?: {
-    editor?: PhotoEntry;
-    partner?: PhotoEntry;
-  };
 }
 
 export interface AppSettings {

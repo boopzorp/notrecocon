@@ -1,22 +1,19 @@
 
 "use client";
 
-import type { FormEvent, ChangeEvent } from 'react';
-import { useState, useEffect, useRef } from 'react';
-import Image from 'next/image';
+import type { FormEvent } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import type { DailyLog, PhotoEntry } from "@/lib/types";
-import { Music2, Save, BookOpen, Lightbulb, Trash2, PenLine, Gift, MessageSquarePlus, MessagesSquare, PlusCircle, Search, Loader2, ImageUp, ImageOff, FileImage, UserCircle, Camera } from 'lucide-react';
+import type { DailyLog } from "@/lib/types";
+import { Music2, Save, BookOpen, Lightbulb, Trash2, PenLine, Gift, MessageSquarePlus, MessagesSquare, PlusCircle, Search, Loader2 } from 'lucide-react';
 import { generateSuggestedReplies, type SuggestedRepliesOutput } from '@/ai/flows/suggested-replies';
 import { extractSongDetails, type ExtractSongDetailsOutput } from '@/ai/flows/extract-song-details-flow';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { useToast } from '@/hooks/use-toast';
-import { storage } from '@/lib/firebase';
-import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { format } from 'date-fns';
 
 interface DailyDetailsCardProps {
@@ -26,24 +23,6 @@ interface DailyDetailsCardProps {
   onDelete?: (date: Date) => void;
   mode: 'editor' | 'reader';
 }
-
-interface PhotoState {
-  selectedFile: File | null;
-  previewUrl: string | null;
-  currentUrl: string | null;
-  dataAiHint: string;
-  isUploading: boolean;
-  uploadError: string | null;
-}
-
-const initialPhotoState: PhotoState = {
-  selectedFile: null,
-  previewUrl: null,
-  currentUrl: null,
-  dataAiHint: '',
-  isUploading: false,
-  uploadError: null,
-};
 
 export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: DailyDetailsCardProps) {
   const [newEditorNoteText, setNewEditorNoteText] = useState('');
@@ -58,15 +37,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   const [isFetchingSongDetails, setIsFetchingSongDetails] = useState(false);
   const [songDetailsError, setSongDetailsError] = useState<string | null>(null);
 
-  // Photo states for editor and partner
-  const [editorPhotoState, setEditorPhotoState] = useState<PhotoState>(initialPhotoState);
-  const [partnerPhotoState, setPartnerPhotoState] = useState<PhotoState>(initialPhotoState);
-
-  const editorFileInputRef = useRef<HTMLInputElement>(null);
-  const partnerFileInputRef = useRef<HTMLInputElement>(null);
-
   const { toast } = useToast();
-  const formattedDateString = format(selectedDate, 'yyyy-MM-dd');
 
   useEffect(() => {
     setNewEditorNoteText('');
@@ -77,119 +48,13 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     setErrorSuggestions(null);
     setSongDetailsError(null);
     setIsFetchingSongDetails(false);
-
-    setEditorPhotoState({
-      ...initialPhotoState,
-      currentUrl: log?.photos?.editor?.url || null,
-      dataAiHint: log?.photos?.editor?.hint || '',
-    });
-    setPartnerPhotoState({
-      ...initialPhotoState,
-      currentUrl: log?.photos?.partner?.url || null,
-      dataAiHint: log?.photos?.partner?.hint || '',
-    });
-
-    if (editorFileInputRef.current) editorFileInputRef.current.value = '';
-    if (partnerFileInputRef.current) partnerFileInputRef.current.value = '';
-
   }, [log, selectedDate]);
 
-  const handlePhotoFileChange = (
-    event: ChangeEvent<HTMLInputElement>,
-    userType: 'editor' | 'partner'
-  ) => {
-    const file = event.target.files?.[0];
-    const setPhotoState = userType === 'editor' ? setEditorPhotoState : setPartnerPhotoState;
-
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        setPhotoState(prev => ({ ...prev, uploadError: "Image is too large. Max 5MB allowed.", selectedFile: null, previewUrl: null }));
-        return;
-      }
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-      if (!allowedTypes.includes(file.type)) {
-        setPhotoState(prev => ({ ...prev, uploadError: "Invalid file type. Only JPG, PNG, GIF, WEBP allowed.", selectedFile: null, previewUrl: null }));
-        return;
-      }
-      setPhotoState(prev => ({
-        ...prev,
-        selectedFile: file,
-        previewUrl: URL.createObjectURL(file),
-        uploadError: null,
-        currentUrl: null, // Clear existing photo if new one is selected
-      }));
-    }
-  };
-
-  const handleRemovePhoto = async (userType: 'editor' | 'partner', isPartOfSaveOrDelete: boolean = false): Promise<Partial<PhotoEntry> | null> => {
-    const photoPath = `dailyPhotos/${formattedDateString}/${userType}_photo`;
-    const currentLogPhoto = userType === 'editor' ? log?.photos?.editor : log?.photos?.partner;
-    const photoState = userType === 'editor' ? editorPhotoState : partnerPhotoState;
-    const setPhotoState = userType === 'editor' ? setEditorPhotoState : setPartnerPhotoState;
-    const fileInputRef = userType === 'editor' ? editorFileInputRef : partnerFileInputRef;
-
-    if (photoState.currentUrl || currentLogPhoto?.url) {
-      try {
-        const photoToDeleteRef = storageRef(storage, photoPath);
-        await deleteObject(photoToDeleteRef);
-        if (!isPartOfSaveOrDelete) {
-          toast({ title: "Photo Removed", description: `The ${userType}'s photo has been removed.` });
-        }
-      } catch (error: any) {
-        if (error.code !== 'storage/object-not-found') {
-          console.error(`Error deleting ${userType}'s photo from storage:`, error);
-        }
-      }
-    }
-    
-    setPhotoState(prev => ({ ...prev, selectedFile: null, previewUrl: null, currentUrl: null, dataAiHint: '' }));
-    if (fileInputRef.current) fileInputRef.current.value = '';
-
-    if (!isPartOfSaveOrDelete) {
-       const currentLogSnapshot = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [], photos: {} };
-       const updatedPhotos = { ...currentLogSnapshot.photos };
-       delete updatedPhotos[userType];
-
-       const updatedLog: DailyLog = { ...currentLogSnapshot, photos: updatedPhotos };
-       onSave(selectedDate, updatedLog);
-    }
-    return { url: '', hint: '' }; // Return cleared fields for save operation
-  };
-
-  const uploadPhoto = async (file: File, userType: 'editor' | 'partner', setPhotoState: React.Dispatch<React.SetStateAction<PhotoState>>): Promise<PhotoEntry | null> => {
-    setPhotoState(prev => ({ ...prev, isUploading: true, uploadError: null }));
-    const photoPath = `dailyPhotos/${formattedDateString}/${userType}_photo`;
-    const fileRef = storageRef(storage, photoPath);
-    
-    try {
-      const uploadTask = uploadBytesResumable(fileRef, file);
-      await uploadTask;
-      const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-      setPhotoState(prev => ({ ...prev, isUploading: false, currentUrl: downloadURL, selectedFile: null, previewUrl: null }));
-      toast({ title: `${userType === 'editor' ? "Your" : "Partner's"} Photo Uploaded!`, description: `The photo is now part of the entry.` });
-      return { url: downloadURL, hint: (userType === 'editor' ? editorPhotoState.dataAiHint : partnerPhotoState.dataAiHint).trim() };
-    } catch (error) {
-      console.error(`Error uploading ${userType}'s photo:`, error);
-      setPhotoState(prev => ({ ...prev, isUploading: false, uploadError: "Failed to upload photo. Please try again." }));
-      return null;
-    }
-  };
 
   const handleEditorSaveNewNote = async (e: FormEvent) => {
     e.preventDefault();
-    let newEditorPhotoEntry: PhotoEntry | undefined = log?.photos?.editor;
-
-    if (editorPhotoState.selectedFile) {
-      const uploaded = await uploadPhoto(editorPhotoState.selectedFile, 'editor', setEditorPhotoState);
-      if (uploaded) newEditorPhotoEntry = uploaded;
-      else return; // Upload failed
-    } else if (editorPhotoState.currentUrl) { // If no new file, but currentUrl exists (and hint might have changed)
-      newEditorPhotoEntry = { url: editorPhotoState.currentUrl, hint: editorPhotoState.dataAiHint.trim() };
-    } else { // Photo was removed or never existed
-      newEditorPhotoEntry = undefined;
-    }
     
-    const currentLogSnapshot: DailyLog = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [], photos: {} };
+    const currentLogSnapshot: DailyLog = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] };
     
     const updatedLog: DailyLog = {
       ...currentLogSnapshot,
@@ -199,45 +64,21 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
       spotifyLink: spotifyLink.trim(),
       songTitle: songTitle.trim(),
       partnerNotes: currentLogSnapshot.partnerNotes || [],
-      photos: {
-        ...currentLogSnapshot.photos,
-        editor: newEditorPhotoEntry,
-      },
     };
-    if (!updatedLog.photos?.editor) delete updatedLog.photos?.editor;
-    if (updatedLog.photos && Object.keys(updatedLog.photos).length === 0) delete updatedLog.photos;
 
     onSave(selectedDate, updatedLog);
     setNewEditorNoteText('');
-    // Photo state (currentUrl, dataAiHint) will be updated by useEffect when log re-fetches/updates
   };
   
   const handlePartnerSaveNewNote = async (e: FormEvent) => {
     e.preventDefault();
-    let newPartnerPhotoEntry: PhotoEntry | undefined = log?.photos?.partner;
 
-    if (partnerPhotoState.selectedFile) {
-      const uploaded = await uploadPhoto(partnerPhotoState.selectedFile, 'partner', setPartnerPhotoState);
-      if (uploaded) newPartnerPhotoEntry = uploaded;
-      else return; // Upload failed
-    } else if (partnerPhotoState.currentUrl) { // If no new file, but currentUrl exists (and hint might have changed)
-      newPartnerPhotoEntry = { url: partnerPhotoState.currentUrl, hint: partnerPhotoState.dataAiHint.trim() };
-    } else { // Photo was removed or never existed
-      newPartnerPhotoEntry = undefined;
-    }
-
-    const currentLogSnapshot: DailyLog = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [], photos: {} };
+    const currentLogSnapshot: DailyLog = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] };
 
     const updatedLog: DailyLog = {
       ...currentLogSnapshot,
       partnerNotes: newPartnerNoteText.trim() ? [...(currentLogSnapshot.partnerNotes || []), newPartnerNoteText] : (currentLogSnapshot.partnerNotes || []),
-      photos: {
-        ...currentLogSnapshot.photos,
-        partner: newPartnerPhotoEntry,
-      },
     };
-    if (!updatedLog.photos?.partner) delete updatedLog.photos?.partner;
-    if (updatedLog.photos && Object.keys(updatedLog.photos).length === 0) delete updatedLog.photos;
 
     onSave(selectedDate, updatedLog);
     setNewPartnerNoteText('');
@@ -245,21 +86,12 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
 
   const handleDeleteEntireEntry = async () => {
     if (onDelete) {
-      let editorPhotoRemoved = false, partnerPhotoRemoved = false;
-      if (log?.photos?.editor?.url) {
-        await handleRemovePhoto('editor', true);
-        editorPhotoRemoved = true;
-      }
-      if (log?.photos?.partner?.url) {
-        await handleRemovePhoto('partner', true);
-        partnerPhotoRemoved = true;
-      }
-      onDelete(selectedDate); // This will clear the entire log in context/Firestore
+      onDelete(selectedDate); 
     }
   };
 
   const handleDeletePartnerNote = (indexToDelete: number) => {
-     const currentLogSnapshot: DailyLog = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [], photos: {} };
+     const currentLogSnapshot: DailyLog = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] };
     const currentPartnerNotes = currentLogSnapshot.partnerNotes;
 
     if (!currentPartnerNotes || indexToDelete < 0 || indexToDelete >= currentPartnerNotes.length) {
@@ -325,61 +157,6 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     }
   };
 
-  const renderPhotoSection = (userType: 'editor' | 'partner', photoState: PhotoState, setPhotoState: React.Dispatch<React.SetStateAction<PhotoState>>, fileInputRef: React.RefObject<HTMLInputElement>, title: string, isEditable: boolean) => {
-    const displayPhotoUrl = photoState.previewUrl || photoState.currentUrl;
-    return (
-      <div className="space-y-2 pt-4 border-t">
-        <Label htmlFor={`${userType}PhotoUpload`} className="flex items-center font-semibold">
-          {userType === 'editor' ? <Camera className="w-4 h-4 mr-2 text-accent"/> : <UserCircle className="w-4 h-4 mr-2 text-accent"/>}
-          {title}
-        </Label>
-        {displayPhotoUrl ? (
-          <div className="relative aspect-video w-full rounded-md overflow-hidden border shadow-sm mb-2">
-            <Image src={displayPhotoUrl} alt={photoState.dataAiHint || `${userType}'s photo preview`} layout="fill" objectFit="cover" data-ai-hint={photoState.dataAiHint} />
-          </div>
-        ) : (
-          isEditable && <p className="text-sm text-muted-foreground">No photo uploaded yet.</p>
-        )}
-        {isEditable && (
-          <>
-            <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} className="flex-grow">
-                <ImageUp className="w-4 h-4 mr-2"/> {displayPhotoUrl ? "Change Photo" : "Upload Photo"}
-              </Button>
-              <input 
-                type="file" 
-                id={`${userType}PhotoUpload`} 
-                ref={fileInputRef}
-                accept="image/jpeg,image/png,image/gif,image/webp" 
-                onChange={(e) => handlePhotoFileChange(e, userType)} 
-                className="hidden" 
-              />
-              {(displayPhotoUrl || photoState.selectedFile) && (
-                <Button type="button" variant="destructive" size="icon" onClick={() => handleRemovePhoto(userType, false)}>
-                  <ImageOff className="w-4 h-4"/>
-                  <span className="sr-only">Remove Photo</span>
-                </Button>
-              )}
-            </div>
-            {photoState.uploadError && <p className="text-sm text-destructive mt-1">{photoState.uploadError}</p>}
-            {photoState.isUploading && <div className="flex items-center text-sm text-muted-foreground mt-1"><Loader2 className="w-4 h-4 mr-2 animate-spin"/>Uploading...</div>}
-            
-            <Label htmlFor={`${userType}PhotoDataAiHint`} className="text-sm font-medium">Photo Description (for AI & alt text)</Label>
-            <Input
-              id={`${userType}PhotoDataAiHint`}
-              type="text"
-              value={photoState.dataAiHint}
-              onChange={(e) => setPhotoState(prev => ({ ...prev, dataAiHint: e.target.value }))}
-              placeholder="e.g., beautiful sunset beach"
-              maxLength={50}
-            />
-            <p className="text-xs text-muted-foreground">Max 2 keywords, e.g., "cat playing".</p>
-          </>
-        )}
-      </div>
-    );
-  };
-
   const formattedDateDisplay = selectedDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
   // Reader Mode (Partner's View)
@@ -388,29 +165,11 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle className="font-headline text-2xl text-primary">{formattedDateDisplay}</CardTitle>
-          {(!log || (!log.editorNotes?.length && !log.spotifyLink && !log.partnerNotes?.length && !log.photos?.editor?.url && !log.photos?.partner?.url)) && (
-             <CardDescription>No entries for this day yet. Be the first to leave a note or photo!</CardDescription>
+          {(!log || (!log.editorNotes?.length && !log.spotifyLink && !log.partnerNotes?.length)) && (
+             <CardDescription>No entries for this day yet. Be the first to leave a note!</CardDescription>
           )}
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Display Editor's Photo */}
-          {log?.photos?.editor?.url && (
-            <div className="space-y-2 pt-4 border-t">
-              <Label className="flex items-center font-semibold text-muted-foreground">
-                <Camera className="w-4 h-4 mr-2 text-accent"/> Their Photo for the Day:
-              </Label>
-              <div className="relative aspect-video w-full rounded-md overflow-hidden border shadow-sm">
-                <Image 
-                  src={log.photos.editor.url} 
-                  alt={log.photos.editor.hint || "Editor's photo of the day"} 
-                  layout="fill" 
-                  objectFit="cover" 
-                  data-ai-hint={log.photos.editor.hint}
-                />
-              </div>
-            </div>
-          )}
-
           {log?.editorNotes && log.editorNotes.length > 0 && (
             <div>
               <Label className="text-muted-foreground font-semibold flex items-center"><BookOpen className="w-4 h-4 mr-2 text-accent"/> Their Thoughts:</Label>
@@ -434,9 +193,6 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
             </div>
           )}
           
-          {/* Partner's Photo Upload Section */}
-          {renderPhotoSection('partner', partnerPhotoState, setPartnerPhotoState, partnerFileInputRef, "Your Photo for the Day", true)}
-
           {log?.partnerNotes && log.partnerNotes.length > 0 && (
             <div className="mt-4 pt-4 border-t">
               <Label className="font-semibold flex items-center"><MessagesSquare className="w-5 h-5 mr-2 text-accent"/>Your Notes for Them:</Label>
@@ -466,9 +222,9 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               rows={3}
               className="bg-white"
             />
-             <Button type="submit" className="w-full" disabled={partnerPhotoState.isUploading || (!newPartnerNoteText.trim() && !partnerPhotoState.selectedFile && !partnerPhotoState.currentUrl)}>
-                {partnerPhotoState.isUploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <Save className="w-4 h-4 mr-2"/>}
-                {partnerPhotoState.isUploading ? "Uploading..." : "Add My Note / Update Photo"}
+             <Button type="submit" className="w-full" disabled={!newPartnerNoteText.trim()}>
+                <Save className="w-4 h-4 mr-2"/>
+                Add My Note
               </Button>
           </form>
         </CardContent>
@@ -482,30 +238,9 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
       <form onSubmit={handleEditorSaveNewNote}>
         <CardHeader>
           <CardTitle className="font-headline text-2xl text-primary">Log for {formattedDateDisplay}</CardTitle>
-          <CardDescription>Share your thoughts, a song, your photo, and see notes & photo from your partner.</CardDescription>
+          <CardDescription>Share your thoughts, a song, and see notes from your partner.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Editor's Photo Upload Section */}
-          {renderPhotoSection('editor', editorPhotoState, setEditorPhotoState, editorFileInputRef, "Your Photo of the Day", true)}
-
-          {/* Display Partner's Photo (Read-only) */}
-          {log?.photos?.partner?.url && (
-            <div className="space-y-2 pt-4 border-t">
-              <Label className="flex items-center font-semibold text-muted-foreground">
-                <UserCircle className="w-4 h-4 mr-2 text-accent"/> Partner's Photo for the Day:
-              </Label>
-              <div className="relative aspect-video w-full rounded-md overflow-hidden border shadow-sm">
-                <Image 
-                  src={log.photos.partner.url} 
-                  alt={log.photos.partner.hint || "Partner's photo of the day"} 
-                  layout="fill" 
-                  objectFit="cover" 
-                  data-ai-hint={log.photos.partner.hint}
-                />
-              </div>
-            </div>
-          )}
-
           {log?.editorNotes && log.editorNotes.length > 0 && (
             <div className="space-y-2 pt-4 border-t">
               <Label className="font-semibold flex items-center"><BookOpen className="w-4 h-4 mr-2 text-accent"/>Your Saved Notes:</Label>
@@ -607,14 +342,14 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
 
         </CardContent>
         <CardFooter className="flex flex-col gap-3">
-          {onDelete && (log?.editorNotes?.length || log?.spotifyLink || log?.partnerNotes?.length || log?.songTitle || log?.photos?.editor?.url || log?.photos?.partner?.url ) && (
+          {onDelete && (log?.editorNotes?.length || log?.spotifyLink || log?.partnerNotes?.length || log?.songTitle) && (
              <Button type="button" variant="destructive" onClick={handleDeleteEntireEntry} className="w-full">
                 <Trash2 className="w-4 h-4 mr-2"/> Delete Entire Day's Entry
               </Button>
           )}
-          <Button type="submit" className="w-full whitespace-normal text-center h-auto" disabled={editorPhotoState.isUploading}>
-            {editorPhotoState.isUploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <PlusCircle className="w-4 h-4 mr-2"/>}
-            {editorPhotoState.isUploading ? "Uploading Photo..." : "Add Note / Update Details"}
+          <Button type="submit" className="w-full whitespace-normal text-center h-auto">
+            <PlusCircle className="w-4 h-4 mr-2"/>
+            Add Note / Update Details
           </Button>
         </CardFooter>
       </form>

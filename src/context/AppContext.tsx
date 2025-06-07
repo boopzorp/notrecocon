@@ -3,9 +3,9 @@
 
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useEffect, useReducer, useCallback } from 'react';
-import type { AppData, DailyLog, AppSettings, PhotoEntry } from '@/lib/types';
+import type { AppData, DailyLog, AppSettings } from '@/lib/types';
 import { format, isValid, parseISO } from 'date-fns';
-import { db, app as firebaseApp } from '@/lib/firebase'; // Import firebaseApp
+import { db, app as firebaseApp } from '@/lib/firebase';
 import { doc, getDoc, setDoc, collection, getDocs, writeBatch, deleteDoc } from 'firebase/firestore';
 
 const USER_ROLE_LOCAL_STORAGE_KEY = 'notreCoconUserRole';
@@ -16,7 +16,7 @@ const FIRESTORE_CONFIG_COLLECTION_ID = 'config';
 
 interface AppState extends AppData {
   isInitialized: boolean;
-  userRole: 'editor' | 'partner' | null; // Allow null for initial state before login
+  userRole: 'editor' | 'partner' | null; 
   editorCode: string | null;
   partnerCode: string | null;
 }
@@ -33,7 +33,7 @@ const initialState: AppState = {
   internshipEnd: null,
   logs: {},
   isInitialized: false,
-  userRole: null, // Initially null
+  userRole: null, 
   editorCode: null,
   partnerCode: null,
 };
@@ -60,7 +60,7 @@ function appReducer(state: AppState, action: Action): AppState {
         editorCode: action.payload.settings.editorCode || null,
         partnerCode: action.payload.settings.partnerCode || null,
         logs: action.payload.logs,
-        userRole: action.payload.userRole, // Persisted role or null
+        userRole: action.payload.userRole, 
         isInitialized: true,
       };
     case 'SET_INTERNSHIP_DATES':
@@ -78,12 +78,11 @@ function appReducer(state: AppState, action: Action): AppState {
         },
       };
     case 'RESET_DATA_STATE':
-      // Keep codes if they were loaded, but reset role
       return {
         ...initialState,
         isInitialized: true,
-        userRole: null, // Reset role, codes will be re-fetched or remain if already in state from init
-        editorCode: state.editorCode, // Preserve loaded codes
+        userRole: null, 
+        editorCode: state.editorCode, 
         partnerCode: state.partnerCode,
       };
     case 'SET_USER_ROLE':
@@ -99,20 +98,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        // console.log('[AppContext] Using Firebase Project ID:', firebaseApp.options.projectId); // Removed for brevity, confirmed working
-        console.log('[AppContext] Attempting to load settings from Firestore path:', `${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}`);
         const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
         const settingsDocSnap = await getDoc(settingsDocRef);
 
-        console.log('[AppContext] settingsDocSnap.exists():', settingsDocSnap.exists());
-
         const appSettings: Partial<AppSettings> = settingsDocSnap.exists() ? (settingsDocSnap.data() as AppSettings) : {};
-        if (settingsDocSnap.exists()) {
-          console.log('[AppContext] Loaded appSettings from Firestore:', JSON.stringify(appSettings));
-        } else {
-          console.warn('[AppContext] appSettings document does not exist at path:', `${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}. Ensure Firebase project configuration in .env is correct and Firestore rules allow access.`);
-        }
-
+        
         const logsCollectionRef = collection(db, FIRESTORE_LOGS_COLLECTION_ID);
         const logsSnapshot = await getDocs(logsCollectionRef);
         const fetchedLogs: Record<string, DailyLog> = {};
@@ -170,29 +160,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         spotifyLink: typeof logData.spotifyLink === 'string' ? logData.spotifyLink : "",
         songTitle: typeof logData.songTitle === 'string' ? logData.songTitle : "",
         partnerNotes: logData.partnerNotes || [],
-        photos: {
-          editor: logData.photos?.editor && logData.photos.editor.url ? { 
-            url: typeof logData.photos.editor.url === 'string' ? logData.photos.editor.url : "",
-            hint: typeof logData.photos.editor.hint === 'string' ? logData.photos.editor.hint : "",
-          } : undefined,
-          partner: logData.photos?.partner && logData.photos.partner.url ? { 
-            url: typeof logData.photos.partner.url === 'string' ? logData.photos.partner.url : "",
-            hint: typeof logData.photos.partner.hint === 'string' ? logData.photos.partner.hint : "",
-          } : undefined,
-        },
       };
       
-      if (dataToSave.photos?.editor && !dataToSave.photos.editor.url) {
-        delete dataToSave.photos.editor;
-      }
-      if (dataToSave.photos?.partner && !dataToSave.photos.partner.url) {
-        delete dataToSave.photos.partner;
-      }
-      if (dataToSave.photos && Object.keys(dataToSave.photos).length === 0) {
-        delete dataToSave.photos;
-      }
-
-
       await setDoc(logDocRef, dataToSave, { merge: true });
       dispatch({ type: 'UPSERT_LOG', payload: { date: formattedDate, log: dataToSave } });
     } catch (error) {
@@ -231,7 +200,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       return false;
     }
     
-    console.log('[AppContext] Attempting login. Editor code in state:', state.editorCode, 'Partner code in state:', state.partnerCode);
     if (!state.editorCode && !state.partnerCode) {
       console.warn("[AppContext] Editor/Partner codes not configured in Firestore settings or not loaded into app state. This is based on what was read from Firestore.");
       return false;
@@ -263,4 +231,3 @@ export const useAppContext = () => {
   }
   return context;
 };
-
