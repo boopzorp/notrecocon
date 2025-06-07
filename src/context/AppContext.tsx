@@ -35,6 +35,8 @@ type Action =
   | { type: 'LOAD_LOGS_SUCCESS'; payload: Record<string, DailyLog> }
   | { type: 'LOAD_LOGS_FAILURE' }
   | { type: 'ADD_EVENT_SUCCESS'; payload: Event }
+  | { type: 'UPDATE_EVENT_SUCCESS'; payload: Event }
+  | { type: 'DELETE_EVENT_SUCCESS'; payload: string }
   | { type: 'UPSERT_LOG'; payload: { date: string; log: DailyLog } }
   | { type: 'RESET_DATA_STATE_SUCCESS' }
   | { type: 'SET_USER_ROLE'; payload: 'editor' | 'partner' | null };
@@ -54,6 +56,8 @@ const AppContext = createContext<
   (AppState & {
     selectEvent: (eventId: string | null) => void;
     addEvent: (eventData: Omit<Event, 'id' | 'createdBy'>) => Promise<string | null>;
+    updateEvent: (eventId: string, eventData: Partial<Omit<Event, 'id' | 'createdBy'>>) => Promise<boolean>;
+    deleteEvent: (eventId: string) => Promise<boolean>;
     upsertLog: (date: Date, log: Omit<DailyLog, 'eventId'>) => Promise<void>;
     getLog: (date: Date) => DailyLog | undefined;
     isEventSelected: () => boolean;
@@ -77,12 +81,12 @@ function appReducer(state: AppState, action: Action): AppState {
         isLoadingEvents: false,
       };
     case 'INITIALIZE_APP_FAILURE':
-      return { ...state, isInitialized: true, isLoadingEvents: false }; // Still initialized, but with defaults/empty
+      return { ...state, isInitialized: true, isLoadingEvents: false };
     case 'SELECT_EVENT':
       return {
         ...state,
         selectedEvent: action.payload,
-        logs: {}, // Clear logs when event changes, will be re-fetched
+        logs: {}, 
       };
     case 'LOAD_LOGS_START':
       return { ...state, isLoadingLogs: true };
@@ -93,10 +97,25 @@ function appReducer(state: AppState, action: Action): AppState {
     case 'ADD_EVENT_SUCCESS':
       return {
         ...state,
-        events: [...state.events, action.payload],
+        events: [...state.events, action.payload].sort((a, b) => parseISO(b.startDate).getTime() - parseISO(a.startDate).getTime()),
+      };
+    case 'UPDATE_EVENT_SUCCESS':
+      return {
+        ...state,
+        events: state.events.map(event => event.id === action.payload.id ? { ...event, ...action.payload } : event)
+          .sort((a, b) => parseISO(b.startDate).getTime() - parseISO(a.startDate).getTime()),
+        selectedEvent: state.selectedEvent?.id === action.payload.id ? { ...state.selectedEvent, ...action.payload } : state.selectedEvent,
+      };
+    case 'DELETE_EVENT_SUCCESS':
+      return {
+        ...state,
+        events: state.events.filter(event => event.id !== action.payload)
+          .sort((a, b) => parseISO(b.startDate).getTime() - parseISO(a.startDate).getTime()),
+        selectedEvent: state.selectedEvent?.id === action.payload ? null : state.selectedEvent,
+        logs: state.selectedEvent?.id === action.payload ? {} : state.logs,
       };
     case 'UPSERT_LOG':
-      if (!state.selectedEvent) return state; // Should not happen if UI guards correctly
+      if (!state.selectedEvent) return state; 
       return {
         ...state,
         logs: {
@@ -106,9 +125,9 @@ function appReducer(state: AppState, action: Action): AppState {
       };
     case 'RESET_DATA_STATE_SUCCESS':
       return {
-        ...initialState, // Resets to initial, including clearing codes if they were part of initial
-        globalConfig: state.globalConfig, // Keep existing codes
-        userRole: state.userRole, // Keep existing role locally, will be cleared on logout if needed
+        ...initialState, 
+        globalConfig: state.globalConfig, 
+        userRole: state.userRole, 
         isInitialized: true,
         events: [],
         selectedEvent: null,
@@ -128,35 +147,47 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const loadInitialData = async () => {
       dispatch({ type: 'INITIALIZE_APP_START' });
       try {
+        console.log(`[AppContext] Attempting to load initial data. Fetching settings from: ${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}`);
+        
         const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
         const settingsDocSnap = await getDoc(settingsDocRef);
-        let appSettings: Partial<AppSettings> = {};
+        
+        let appSettingsFromDb: Partial<AppSettings> = {};
+        
+        console.log(`[AppContext] settingsDocSnap.exists() = ${settingsDocSnap.exists()}`);
+
         if (settingsDocSnap.exists()) {
-          appSettings = settingsDocSnap.data() as AppSettings;
+          appSettingsFromDb = settingsDocSnap.data() as AppSettings;
+          console.log('[AppContext] Raw data from settingsDocSnap.data():', settingsDocSnap.data());
+          console.log('[AppContext] Parsed appSettingsFromDb:', appSettingsFromDb);
         } else {
-          console.warn(`[AppContext] appSettings document does not exist at path: ${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}. Using defaults.`);
+          console.warn(`[AppContext] Firestore document at '${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}' does NOT exist. Access codes will be null.`);
         }
 
         const eventsCollectionRef = collection(db, FIRESTORE_EVENTS_COLLECTION_ID);
         const eventsSnapshot = await getDocs(eventsCollectionRef);
         const fetchedEvents: Event[] = eventsSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Event));
-        fetchedEvents.sort((a, b) => parseISO(b.startDate).getTime() - parseISO(a.startDate).getTime()); // Sort newest first
+        fetchedEvents.sort((a, b) => parseISO(b.startDate).getTime() - parseISO(a.startDate).getTime());
+        console.log('[AppContext] Fetched events:', fetchedEvents);
 
         const storedUserRole = localStorage.getItem(USER_ROLE_LOCAL_STORAGE_KEY) as 'editor' | 'partner' | null;
         
+        const globalConfigData = {
+          editorCode: appSettingsFromDb.editorCode || null,
+          partnerCode: appSettingsFromDb.partnerCode || null,
+        };
+        console.log('[AppContext] Global config to be dispatched:', globalConfigData);
+
         dispatch({
           type: 'INITIALIZE_APP_SUCCESS',
           payload: {
-            globalConfig: {
-              editorCode: appSettings.editorCode || null,
-              partnerCode: appSettings.partnerCode || null,
-            },
+            globalConfig: globalConfigData,
             events: fetchedEvents,
             userRole: storedUserRole,
           }
         });
       } catch (error) {
-        console.error("[AppContext] Failed to load initial data:", error);
+        console.error("[AppContext] CRITICAL ERROR during loadInitialData:", error);
         dispatch({ type: 'INITIALIZE_APP_FAILURE' });
       }
     };
@@ -172,14 +203,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (eventToSelect) {
       dispatch({ type: 'SELECT_EVENT', payload: eventToSelect });
     } else {
-      dispatch({ type: 'SELECT_EVENT', payload: null }); // Event not found
+      console.warn(`[AppContext] Event with ID '${eventId}' not found in current events list. Not selecting.`);
+      dispatch({ type: 'SELECT_EVENT', payload: null }); 
     }
   }, [state.events]);
 
   useEffect(() => {
     const fetchLogsForSelectedEvent = async () => {
       if (!state.selectedEvent) {
-        dispatch({ type: 'LOAD_LOGS_SUCCESS', payload: {} }); // Clear logs if no event selected
+        dispatch({ type: 'LOAD_LOGS_SUCCESS', payload: {} });
         return;
       }
       dispatch({ type: 'LOAD_LOGS_START' });
@@ -188,8 +220,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const logsSnapshot = await getDocs(logsQuery);
         const fetchedLogs: Record<string, DailyLog> = {};
         logsSnapshot.forEach((logDoc) => {
-          // The log ID in Firestore is YYYY-MM-DD, use this as key
-          fetchedLogs[logDoc.id] = logDoc.data() as DailyLog;
+          const logData = logDoc.data() as Omit<DailyLog, 'eventId'>; // Data from doc doesn't have eventId as top-level field
+          fetchedLogs[format(parseISO(logDoc.id.split('_')[0]), 'yyyy-MM-dd')] = {
+            ...logData,
+            eventId: state.selectedEvent!.id // Add eventId here
+          };
         });
         dispatch({ type: 'LOAD_LOGS_SUCCESS', payload: fetchedLogs });
       } catch (error) {
@@ -197,8 +232,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         dispatch({ type: 'LOAD_LOGS_FAILURE' });
       }
     };
-    fetchLogsForSelectedEvent();
-  }, [state.selectedEvent]);
+    if (state.isInitialized && state.selectedEvent) { // Only fetch if initialized and event selected
+        fetchLogsForSelectedEvent();
+    } else if (state.isInitialized && !state.selectedEvent) { // Clear logs if no event selected
+        dispatch({ type: 'LOAD_LOGS_SUCCESS', payload: {} });
+    }
+  }, [state.selectedEvent, state.isInitialized]);
 
 
   const setUserRole = useCallback((role: 'editor' | 'partner' | null) => {
@@ -206,7 +245,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       localStorage.setItem(USER_ROLE_LOCAL_STORAGE_KEY, role);
     } else {
       localStorage.removeItem(USER_ROLE_LOCAL_STORAGE_KEY);
-      selectEvent(null); // Clear selected event on logout
+      selectEvent(null); 
     }
     dispatch({ type: 'SET_USER_ROLE', payload: role });
   }, [selectEvent]);
@@ -219,11 +258,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     try {
       const newEventDocRef = await addDoc(collection(db, FIRESTORE_EVENTS_COLLECTION_ID), {
         ...eventData,
-        createdBy: state.userRole, // Or a more specific user ID if you have one
-        startDate: format(parseISO(eventData.startDate), 'yyyy-MM-dd'), // Ensure format
-        endDate: format(parseISO(eventData.endDate), 'yyyy-MM-dd'),     // Ensure format
+        createdBy: state.userRole, 
+        name: eventData.name.trim(),
+        startDate: format(parseISO(eventData.startDate), 'yyyy-MM-dd'), 
+        endDate: format(parseISO(eventData.endDate), 'yyyy-MM-dd'),     
       });
-      const newEvent: Event = { id: newEventDocRef.id, ...eventData, createdBy: state.userRole };
+      const newEvent: Event = { 
+        id: newEventDocRef.id, 
+        name: eventData.name.trim(),
+        startDate: format(parseISO(eventData.startDate), 'yyyy-MM-dd'),
+        endDate: format(parseISO(eventData.endDate), 'yyyy-MM-dd'),
+        createdBy: state.userRole 
+      };
       dispatch({ type: 'ADD_EVENT_SUCCESS', payload: newEvent });
       return newEventDocRef.id;
     } catch (error) {
@@ -232,14 +278,67 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [state.userRole]);
 
+  const updateEvent = useCallback(async (eventId: string, eventData: Partial<Omit<Event, 'id' | 'createdBy'>>): Promise<boolean> => {
+    if (state.userRole !== 'editor') {
+      console.error("[AppContext] Only editor can update events.");
+      return false;
+    }
+    try {
+      const eventDocRef = doc(db, FIRESTORE_EVENTS_COLLECTION_ID, eventId);
+      const updateData: Partial<Event> = { ...eventData };
+      if (eventData.startDate) updateData.startDate = format(parseISO(eventData.startDate), 'yyyy-MM-dd');
+      if (eventData.endDate) updateData.endDate = format(parseISO(eventData.endDate), 'yyyy-MM-dd');
+      if (eventData.name) updateData.name = eventData.name.trim();
+
+      await setDoc(eventDocRef, updateData, { merge: true });
+      
+      const updatedEventFull: Event = { 
+        ...(state.events.find(e => e.id === eventId) as Event), // get existing full event
+        ...updateData // apply updates
+      };
+
+      dispatch({ type: 'UPDATE_EVENT_SUCCESS', payload: updatedEventFull });
+      return true;
+    } catch (error) {
+      console.error(`[AppContext] Failed to update event ${eventId}:`, error);
+      return false;
+    }
+  }, [state.userRole, state.events]);
+
+  const deleteEvent = useCallback(async (eventId: string): Promise<boolean> => {
+    if (state.userRole !== 'editor') {
+      console.error("[AppContext] Only editor can delete events.");
+      return false;
+    }
+    try {
+      const batch = writeBatch(db);
+      // Delete the event document
+      batch.delete(doc(db, FIRESTORE_EVENTS_COLLECTION_ID, eventId));
+      // Delete all logs associated with this event
+      const logsQuery = query(collection(db, FIRESTORE_LOGS_COLLECTION_ID), where("eventId", "==", eventId));
+      const logsSnapshot = await getDocs(logsQuery);
+      logsSnapshot.docs.forEach((logDoc) => batch.delete(logDoc.ref));
+      
+      await batch.commit();
+      dispatch({ type: 'DELETE_EVENT_SUCCESS', payload: eventId });
+      return true;
+    } catch (error) {
+      console.error(`[AppContext] Failed to delete event ${eventId} and its logs:`, error);
+      return false;
+    }
+  }, [state.userRole]);
+
+
   const upsertLog = useCallback(async (date: Date, logEntry: Omit<DailyLog, 'eventId'>) => {
     if (!state.selectedEvent) {
       console.error("[AppContext] Cannot save log: No event selected.");
       return;
     }
     const formattedDate = format(date, 'yyyy-MM-dd');
+    const logId = `${formattedDate}_${state.selectedEvent.id}`; 
+
     try {
-      const logDocRef = doc(db, FIRESTORE_LOGS_COLLECTION_ID, formattedDate + "_" + state.selectedEvent.id); // Composite ID
+      const logDocRef = doc(db, FIRESTORE_LOGS_COLLECTION_ID, logId);
       
       const fullLogData: DailyLog = {
         ...logEntry,
@@ -249,8 +348,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         promptForPartner: logEntry.promptForPartner || "",
         promptForEditor: logEntry.promptForEditor || "",
         moods: {
-          editor: logEntry.moods?.editor || null,
-          partner: logEntry.moods?.partner || null,
+          editor: logEntry.moods?.editor === undefined ? null : logEntry.moods.editor,
+          partner: logEntry.moods?.partner === undefined ? null : logEntry.moods.partner,
         },
         songs: {
           editor: logEntry.songs?.editor || null,
@@ -258,18 +357,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }
       };
       
-      // Firestore document ID will be YYYY-MM-DD for easy querying by date within an event's logs
-      // We might need to change this if logs from different events on the same date could clash.
-      // For now, assuming logs are fetched per event, the date key in the 'logs' state object is fine.
-      // The Firestore document ID should be unique. A composite key like `YYYY-MM-DD_eventId` is safer.
-      // Let's stick to storing logs in the `logs` state object keyed by 'YYYY-MM-DD' for simplicity in `getLog`.
-      // The Firestore write will use the composite key.
-      await setDoc(doc(db, FIRESTORE_LOGS_COLLECTION_ID, `${formattedDate}_${state.selectedEvent.id}`), fullLogData, { merge: true });
-
-      // Update local state, keying by date for UI consistency
+      await setDoc(logDocRef, fullLogData, { merge: true });
       dispatch({ type: 'UPSERT_LOG', payload: { date: formattedDate, log: fullLogData } });
     } catch (error: any) {
-      console.error("[AppContext] Failed to save log to Firestore:", error.message, error.stack);
+      console.error(`[AppContext] Failed to save log '${logId}' to Firestore:`, error.message, error.stack);
     }
   }, [state.selectedEvent]);
 
@@ -287,26 +378,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         console.error("Unauthorized: Only editor can reset all app data.");
         return;
     }
+    console.log("[AppContext] Attempting to reset all app data (events and logs)...");
     try {
       const batch = writeBatch(db);
 
-      // Delete all logs
       const logsCollectionRef = collection(db, FIRESTORE_LOGS_COLLECTION_ID);
       const logsSnapshot = await getDocs(logsCollectionRef);
       logsSnapshot.docs.forEach((logDoc) => batch.delete(logDoc.ref));
+      console.log(`[AppContext] Marked ${logsSnapshot.size} logs for deletion.`);
 
-      // Delete all events
       const eventsCollectionRef = collection(db, FIRESTORE_EVENTS_COLLECTION_ID);
       const eventsSnapshot = await getDocs(eventsCollectionRef);
       eventsSnapshot.docs.forEach((eventDoc) => batch.delete(eventDoc.ref));
+      console.log(`[AppContext] Marked ${eventsSnapshot.size} events for deletion.`);
       
-      // Note: Global config (access codes) are NOT reset here.
-      // If you wanted to reset them, you'd update the config/appSettings doc.
-      // For now, we just clear event-related data.
-
       await batch.commit();
+      console.log("[AppContext] Successfully reset all events and logs in Firestore.");
       dispatch({ type: 'RESET_DATA_STATE_SUCCESS' });
-      // Optionally, clear selected event if any was selected before reset
       selectEvent(null);
 
     } catch (error) {
@@ -320,9 +408,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       return false;
     }
     const { editorCode, partnerCode } = state.globalConfig;
+    
+    console.log(`[AppContext] Attempting login. Provided code: "${enteredCode}". Configured editorCode: "${editorCode}", partnerCode: "${partnerCode}"`);
 
     if (!editorCode && !partnerCode) {
-      console.warn("[AppContext] Editor/Partner codes not found in loaded global config. Check Firestore 'config/appSettings'.");
+      console.warn("[AppContext] Editor/Partner codes not found in loaded global config. Check Firestore 'config/appSettings'. This could be due to the document not existing, or the fields being missing/null.");
       return false;
     }
 
@@ -338,7 +428,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [state.isInitialized, state.globalConfig, setUserRole]);
 
   return (
-    <AppContext.Provider value={{ ...state, selectEvent, addEvent, upsertLog, getLog, isEventSelected, resetAllAppData, setUserRole, attemptLoginWithCode }}>
+    <AppContext.Provider value={{ ...state, selectEvent, addEvent, updateEvent, deleteEvent, upsertLog, getLog, isEventSelected, resetAllAppData, setUserRole, attemptLoginWithCode }}>
       {children}
     </AppContext.Provider>
   );
@@ -351,3 +441,6 @@ export const useAppContext = () => {
   }
   return context;
 };
+
+
+    
