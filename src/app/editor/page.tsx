@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from 'react';
@@ -41,16 +42,14 @@ export default function EditorPage() {
     }
   }, [isInitialized, isConfigured, router]);
   
-  // Adjust selectedDate if internship dates change and selectedDate is outside new range
   useEffect(() => {
     if (internshipStart && internshipEnd && selectedDate) {
       const start = parseISO(internshipStart);
       const end = parseISO(internshipEnd);
       if (selectedDate < start || selectedDate > end) {
-        setSelectedDate(start); // Default to start date if current selected is out of new bounds
+        setSelectedDate(start); 
       }
     } else if (internshipStart && !selectedDate) {
-       // If dates are configured and no selectedDate, set to start date or today
       const start = parseISO(internshipStart);
       const today = new Date();
       today.setHours(0,0,0,0);
@@ -100,15 +99,14 @@ export default function EditorPage() {
   const handleSaveLog = (date: Date, log: DailyLog) => {
     upsertLog(date, log);
     toast({
-      title: "Log Saved!",
-      description: `Your entry for ${format(date, "MMMM do, yyyy")} has been saved.`,
+      title: "Entry Updated!",
+      description: `Your entry for ${format(date, "MMMM do, yyyy")} has been saved/updated.`,
       className: "bg-secondary text-secondary-foreground",
     });
   };
 
   const handleDeleteLog = (date: Date) => {
-    // Create a "deleted" or empty log
-    upsertLog(date, { note: "", spotifyLink: "" });
+    upsertLog(date, { editorNotes: [], spotifyLink: "", partnerNotes: [] }); // Clear all parts of the log
     toast({
       title: "Log Deleted!",
       description: `Your entry for ${format(date, "MMMM do, yyyy")} has been cleared.`,

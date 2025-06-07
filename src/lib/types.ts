@@ -1,7 +1,7 @@
 export interface DailyLog {
-  note: string;
+  editorNotes?: string[]; // Changed from note: string
   spotifyLink: string;
-  partnerNotes?: string[]; // Changed from partnerNote: string to partnerNotes: string[]
+  partnerNotes?: string[];
 }
 
 export interface AppSettings {
