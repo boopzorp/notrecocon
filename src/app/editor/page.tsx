@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppContext } from '@/context/AppContext';
 import { AppContainer, PageSection } from '@/components/AppContainer';
-import { InternshipProgressBar } from '@/components/InternshipProgressBar';
+import { EventProgressBar } from '@/components/EventProgressBar'; // Renamed
 import { AppCalendarView } from '@/components/AppCalendarView';
 import { DailyDetailsCard } from '@/components/DailyDetailsCard';
 import type { DailyLog } from '@/lib/types';
@@ -17,18 +17,17 @@ import { useToast } from '@/hooks/use-toast';
 import { format, parseISO } from 'date-fns';
 
 export default function EditorPage() {
-  const { internshipStart, internshipEnd, logs, upsertLog, getLog, isConfigured, isInitialized, userRole } = useAppContext();
+  const { eventName, eventStartDate, eventEndDate, logs, upsertLog, getLog, isConfigured, isInitialized, userRole } = useAppContext(); // Updated context fields
   const router = useRouter();
   const { toast } = useToast();
   
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(() => {
-    if (internshipStart) {
-      const start = parseISO(internshipStart);
-      // Default to today if within range, else start date
+    if (eventStartDate) {
+      const start = parseISO(eventStartDate);
       const today = new Date();
       today.setHours(0,0,0,0);
-      if (internshipEnd) {
-        const end = parseISO(internshipEnd);
+      if (eventEndDate) {
+        const end = parseISO(eventEndDate);
         if (today >= start && today <= end) return today;
       }
       return start;
@@ -40,7 +39,7 @@ export default function EditorPage() {
     if (isInitialized) {
       if (!userRole) {
         router.replace('/safe-space');
-        return; // Exit early to prevent further checks if redirecting
+        return; 
       }
       if (!isConfigured()) {
         router.replace('/setup');
@@ -49,18 +48,18 @@ export default function EditorPage() {
   }, [isInitialized, userRole, isConfigured, router]);
   
   useEffect(() => {
-    if (internshipStart && internshipEnd && selectedDate) {
-      const start = parseISO(internshipStart);
-      const end = parseISO(internshipEnd);
+    if (eventStartDate && eventEndDate && selectedDate) {
+      const start = parseISO(eventStartDate);
+      const end = parseISO(eventEndDate);
       if (selectedDate < start || selectedDate > end) {
         setSelectedDate(start); 
       }
-    } else if (internshipStart && !selectedDate) {
-      const start = parseISO(internshipStart);
+    } else if (eventStartDate && !selectedDate) {
+      const start = parseISO(eventStartDate);
       const today = new Date();
       today.setHours(0,0,0,0);
-       if (internshipEnd) {
-        const end = parseISO(internshipEnd);
+       if (eventEndDate) {
+        const end = parseISO(eventEndDate);
         if (today >= start && today <= end) {
           setSelectedDate(today);
           return;
@@ -68,7 +67,7 @@ export default function EditorPage() {
       }
       setSelectedDate(start);
     }
-  }, [internshipStart, internshipEnd, selectedDate]);
+  }, [eventStartDate, eventEndDate, selectedDate]);
 
 
   if (!isInitialized || !userRole) { 
@@ -89,7 +88,7 @@ export default function EditorPage() {
             <AlertCircle className="w-12 h-12 mx-auto text-destructive" />
             <h3 className="text-2xl font-semibold text-destructive">Configuration Needed</h3>
             <p className="text-muted-foreground">
-              Please set the internship start and end dates to use the editor.
+              Please set the event name, start, and end dates to use the editor.
             </p>
             <Button asChild>
               <Link href="/setup" className="flex items-center gap-2">
@@ -112,14 +111,13 @@ export default function EditorPage() {
   };
 
   const handleDeleteLog = (date: Date) => {
-    // Construct a log entry that signals clearing of all fields
     const clearedLog: DailyLog = { 
       editorNotes: [], 
-      songs: { editor: undefined, partner: undefined }, // Signal to clear songs
+      songs: { editor: undefined, partner: undefined },
       partnerNotes: [], 
       promptForPartner: "", 
       promptForEditor: "",
-      moods: { editor: null, partner: null } // Signal to clear moods to null
+      moods: { editor: null, partner: null } 
     };
     upsertLog(date, clearedLog); 
     toast({
@@ -134,14 +132,14 @@ export default function EditorPage() {
   return (
     <AppContainer showHomeButton={true}>
       <PageSection title="Editor's Nook" titleClassName="text-accent">
-        <InternshipProgressBar startDateString={internshipStart} endDateString={internshipEnd} />
+        <EventProgressBar eventName={eventName} eventStartDateString={eventStartDate} eventEndDateString={eventEndDate} />
       </PageSection>
 
       <div className="grid md:grid-cols-2 gap-8 items-start">
         <PageSection title="Our Calendar" titleClassName="text-primary">
           <AppCalendarView
-            startDateString={internshipStart}
-            endDateString={internshipEnd}
+            eventStartDateString={eventStartDate}
+            eventEndDateString={eventEndDate}
             logs={logs}
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}

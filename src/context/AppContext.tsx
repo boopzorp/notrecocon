@@ -5,8 +5,8 @@ import type { ReactNode } from 'react';
 import React, { createContext, useContext, useEffect, useReducer, useCallback } from 'react';
 import type { AppData, DailyLog, AppSettings, SongEntry } from '@/lib/types';
 import { format, isValid, parseISO } from 'date-fns';
-import { db, app as firebaseApp } from '@/lib/firebase';
-import { doc, getDoc, setDoc, collection, getDocs, writeBatch, deleteDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, setDoc, collection, getDocs, writeBatch } from 'firebase/firestore';
 
 const USER_ROLE_LOCAL_STORAGE_KEY = 'notreCoconUserRole';
 const FIRESTORE_SETTINGS_DOC_ID = 'appSettings';
@@ -23,14 +23,15 @@ interface AppState extends AppData {
 
 type Action =
   | { type: 'INITIALIZE_APP'; payload: { settings: Partial<AppSettings>; logs: Record<string, DailyLog>; userRole: 'editor' | 'partner' | null } }
-  | { type: 'SET_INTERNSHIP_DATES'; payload: { startDate: Date; endDate: Date } }
+  | { type: 'SET_EVENT_DETAILS'; payload: { eventName: string | null; startDate: Date; endDate: Date } }
   | { type: 'UPSERT_LOG'; payload: { date: string; log: DailyLog } }
   | { type: 'RESET_DATA_STATE' }
   | { type: 'SET_USER_ROLE'; payload: 'editor' | 'partner' | null };
 
 const initialState: AppState = {
-  internshipStart: null,
-  internshipEnd: null,
+  eventName: null,
+  eventStartDate: null,
+  eventEndDate: null,
   logs: {},
   isInitialized: false,
   userRole: null,
@@ -40,7 +41,7 @@ const initialState: AppState = {
 
 const AppContext = createContext<
   (AppState & {
-    setInternshipDates: (startDate: Date, endDate: Date) => Promise<void>;
+    setEventDetails: (eventName: string | null, startDate: Date, endDate: Date) => Promise<void>;
     upsertLog: (date: Date, log: DailyLog) => Promise<void>;
     getLog: (date: Date) => DailyLog | undefined;
     isConfigured: () => boolean;
@@ -57,19 +58,21 @@ function appReducer(state: AppState, action: Action): AppState {
       console.log("[AppContext] Initializing with userRole:", action.payload.userRole);
       return {
         ...state,
-        internshipStart: action.payload.settings.internshipStart || null,
-        internshipEnd: action.payload.settings.internshipEnd || null,
+        eventName: action.payload.settings.eventName || null,
+        eventStartDate: action.payload.settings.eventStartDate || null,
+        eventEndDate: action.payload.settings.eventEndDate || null,
         editorCode: action.payload.settings.editorCode || null,
         partnerCode: action.payload.settings.partnerCode || null,
         logs: action.payload.logs,
         userRole: action.payload.userRole,
         isInitialized: true,
       };
-    case 'SET_INTERNSHIP_DATES':
+    case 'SET_EVENT_DETAILS':
       return {
         ...state,
-        internshipStart: format(action.payload.startDate, 'yyyy-MM-dd'),
-        internshipEnd: format(action.payload.endDate, 'yyyy-MM-dd'),
+        eventName: action.payload.eventName,
+        eventStartDate: format(action.payload.startDate, 'yyyy-MM-dd'),
+        eventEndDate: format(action.payload.endDate, 'yyyy-MM-dd'),
       };
     case 'UPSERT_LOG':
       return {
@@ -82,10 +85,10 @@ function appReducer(state: AppState, action: Action): AppState {
     case 'RESET_DATA_STATE':
       return {
         ...initialState,
-        isInitialized: true, // Keep initialization status
-        userRole: null, // Reset user role
-        editorCode: state.editorCode, // Preserve loaded codes
-        partnerCode: state.partnerCode, // Preserve loaded codes
+        isInitialized: true, 
+        userRole: null, 
+        editorCode: state.editorCode, 
+        partnerCode: state.partnerCode, 
       };
     case 'SET_USER_ROLE':
       return { ...state, userRole: action.payload };
@@ -101,8 +104,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const loadData = async () => {
       try {
         const settingsDocPath = `${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}`;
-        console.log(`[AppContext] Attempting to load settings from Firestore path: ${settingsDocPath}`);
-
         const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
         const settingsDocSnap = await getDoc(settingsDocRef);
 
@@ -120,12 +121,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         logsSnapshot.forEach((logDoc) => {
           fetchedLogs[logDoc.id] = logDoc.data() as DailyLog;
         });
-        console.log("[AppContext] Fetched logs:", fetchedLogs);
 
         const storedUserRole = localStorage.getItem(USER_ROLE_LOCAL_STORAGE_KEY) as 'editor' | 'partner' | null;
-        console.log("[AppContext] Stored user role from localStorage:", storedUserRole);
-
-
+        
         dispatch({
           type: 'INITIALIZE_APP',
           payload: {
@@ -153,15 +151,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
 
-  const setInternshipDates = useCallback(async (startDate: Date, endDate: Date) => {
+  const setEventDetails = useCallback(async (eventName: string | null, startDate: Date, endDate: Date) => {
     const formattedStartDate = format(startDate, 'yyyy-MM-dd');
     const formattedEndDate = format(endDate, 'yyyy-MM-dd');
     try {
       const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
-      await setDoc(settingsDocRef, { internshipStart: formattedStartDate, internshipEnd: formattedEndDate }, { merge: true });
-      dispatch({ type: 'SET_INTERNSHIP_DATES', payload: { startDate, endDate } });
+      await setDoc(settingsDocRef, { eventName: eventName || "", eventStartDate: formattedStartDate, eventEndDate: formattedEndDate }, { merge: true });
+      dispatch({ type: 'SET_EVENT_DETAILS', payload: { eventName, startDate, endDate } });
     } catch (error) {
-      console.error("Failed to save internship dates to Firestore:", error);
+      console.error("Failed to save event details to Firestore:", error);
     }
   }, []);
 
@@ -170,7 +168,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     try {
       const logDocRef = doc(db, FIRESTORE_LOGS_COLLECTION_ID, formattedDate);
 
-      // Construct the data to save, ensuring undefined song entries become null or are omitted
       const editorSong: SongEntry | undefined = (logData.songs?.editor?.link)
         ? { link: logData.songs.editor.link, title: logData.songs.editor.title || "" }
         : undefined;
@@ -187,7 +184,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           editor: logData.moods?.editor || null,
           partner: logData.moods?.partner || null,
         },
-        // Only include the songs object if at least one song is defined
         ...( (editorSong || partnerSong) && {
             songs: {
               ...(editorSong && { editor: editorSong }),
@@ -197,12 +193,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         )
       };
       
-      // If songs object exists but both editor and partner songs are undefined (e.g. after clearing)
-      // ensure the songs field itself is removed if it ends up empty.
-      // The spread syntax above already handles not creating 'songs' if both are undefined.
-      // If songs object was created but one of them became undefined, it will be { editor: undefined } or { partner: undefined}
-      // Firestore handles 'undefined' in objects by removing the field, which is fine.
-
       await setDoc(logDocRef, dataToSave, { merge: true });
       dispatch({ type: 'UPSERT_LOG', payload: { date: formattedDate, log: dataToSave } });
     } catch (error: any) {
@@ -215,9 +205,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [state.logs]);
 
   const isConfigured = useCallback((): boolean => {
-    return !!state.internshipStart && !!state.internshipEnd &&
-           isValid(parseISO(state.internshipStart)) && isValid(parseISO(state.internshipEnd));
-  }, [state.internshipStart, state.internshipEnd]);
+    return !!state.eventStartDate && !!state.eventEndDate &&
+           isValid(parseISO(state.eventStartDate)) && isValid(parseISO(state.eventEndDate));
+  }, [state.eventStartDate, state.eventEndDate]);
 
   const resetData = useCallback(async () => {
     try {
@@ -228,13 +218,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         batch.delete(logDoc.ref);
       });
       const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
-      // Only reset dates, keep codes
-      await setDoc(settingsDocRef, { internshipStart: null, internshipEnd: null }, { merge: true });
+      await setDoc(settingsDocRef, { eventName: null, eventStartDate: null, eventEndDate: null }, { merge: true });
 
       await batch.commit();
-
       dispatch({ type: 'RESET_DATA_STATE' });
-    } catch (error) {      
+    } catch (error) {
       console.error("Failed to reset log data in Firestore:", error);
     }
   }, []);
@@ -263,7 +251,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
 
   return (
-    <AppContext.Provider value={{ ...state, setInternshipDates, upsertLog, getLog, isConfigured, resetData, setUserRole, attemptLoginWithCode }}>
+    <AppContext.Provider value={{ ...state, setEventDetails, upsertLog, getLog, isConfigured, resetData, setUserRole, attemptLoginWithCode }}>
       {children}
     </AppContext.Provider>
   );

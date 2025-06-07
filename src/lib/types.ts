@@ -4,7 +4,6 @@ export interface MoodEntry {
   partner?: string | null; // emoji character, allow null
 }
 
-// NEW: Song entry structure
 export interface SongEntry {
   link: string;
   title?: string;
@@ -12,9 +11,9 @@ export interface SongEntry {
 
 export interface DailyLog {
   editorNotes?: string[];
-  songs?: { // Optional top-level songs object
-    editor?: SongEntry | null; // Optional editor song, allow null
-    partner?: SongEntry | null; // Optional partner song, allow null
+  songs?: {
+    editor?: SongEntry | null;
+    partner?: SongEntry | null;
   };
   partnerNotes?: string[];
   promptForPartner?: string;
@@ -23,8 +22,9 @@ export interface DailyLog {
 }
 
 export interface AppSettings {
-  internshipStart: string | null; // ISO string
-  internshipEnd: string | null; // ISO string
+  eventName: string | null; // New: Name of the current event
+  eventStartDate: string | null; // Renamed from internshipStart
+  eventEndDate: string | null; // Renamed from internshipEnd
   userRole?: 'editor' | 'partner';
   editorCode?: string;
   partnerCode?: string;

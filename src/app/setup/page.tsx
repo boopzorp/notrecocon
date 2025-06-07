@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, type FormEvent, useEffect } from 'react';
@@ -9,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { AppContainer, PageSection } from '@/components/AppContainer';
 import { formatISO, parseISO, isValid } from 'date-fns';
-import { Calendar as CalendarIcon, Save, Trash2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Save, Trash2, Tag } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
@@ -17,25 +18,35 @@ import { useToast } from '@/hooks/use-toast';
 
 
 export default function SetupPage() {
-  const { internshipStart, internshipEnd, setInternshipDates, resetData, isConfigured } = useAppContext();
+  const { eventName: currentEventName, eventStartDate: currentEventStartDate, eventEndDate: currentEventEndDate, setEventDetails, resetData, isConfigured } = useAppContext();
   const router = useRouter();
   const { toast } = useToast();
 
+  const [eventName, setEventName] = useState<string>(currentEventName || '');
   const [startDate, setStartDate] = useState<Date | undefined>(
-    internshipStart && isValid(parseISO(internshipStart)) ? parseISO(internshipStart) : undefined
+    currentEventStartDate && isValid(parseISO(currentEventStartDate)) ? parseISO(currentEventStartDate) : undefined
   );
   const [endDate, setEndDate] = useState<Date | undefined>(
-    internshipEnd && isValid(parseISO(internshipEnd)) ? parseISO(internshipEnd) : undefined
+    currentEventEndDate && isValid(parseISO(currentEventEndDate)) ? parseISO(currentEventEndDate) : undefined
   );
 
   useEffect(() => {
-    setStartDate(internshipStart && isValid(parseISO(internshipStart)) ? parseISO(internshipStart) : undefined);
-    setEndDate(internshipEnd && isValid(parseISO(internshipEnd)) ? parseISO(internshipEnd) : undefined);
-  }, [internshipStart, internshipEnd]);
+    setEventName(currentEventName || '');
+    setStartDate(currentEventStartDate && isValid(parseISO(currentEventStartDate)) ? parseISO(currentEventStartDate) : undefined);
+    setEndDate(currentEventEndDate && isValid(parseISO(currentEventEndDate)) ? parseISO(currentEventEndDate) : undefined);
+  }, [currentEventName, currentEventStartDate, currentEventEndDate]);
 
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
+    if (!eventName.trim()) {
+      toast({
+        title: "Missing Event Name",
+        description: "Please provide a name for the event.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (startDate && endDate) {
       if (endDate < startDate) {
         toast({
@@ -45,10 +56,10 @@ export default function SetupPage() {
         });
         return;
       }
-      setInternshipDates(startDate, endDate);
+      setEventDetails(eventName.trim(), startDate, endDate);
       toast({
-        title: "Dates Saved!",
-        description: "Internship dates have been configured.",
+        title: "Event Details Saved!",
+        description: "The current event details have been configured.",
       });
       router.push('/editor'); 
     } else {
@@ -61,32 +72,45 @@ export default function SetupPage() {
   };
 
   const handleReset = () => {
-    resetData();
+    resetData(); // This will clear eventName, eventStartDate, eventEndDate in context
+    setEventName(''); // Clear local state
     setStartDate(undefined);
     setEndDate(undefined);
     toast({
       title: "Data Reset",
-      description: "All application data has been cleared.",
+      description: "All application data, including event details, has been cleared.",
     });
   };
 
   return (
     <AppContainer showHomeButton={true}>
-      <PageSection title="Configure Internship Dates" titleClassName="text-accent">
+      <PageSection title="Configure Current Event" titleClassName="text-accent">
         <Card className="w-full max-w-lg mx-auto shadow-lg">
           <form onSubmit={handleSubmit}>
             <CardHeader>
               <CardTitle className="font-headline text-3xl text-primary">Set The Timeline</CardTitle>
               <CardDescription>
                 {isConfigured() 
-                  ? "Update the internship start and end dates. This will define the calendar range and progress."
-                  : "Define the internship start and end dates to begin using the app."
+                  ? "Update the current event's name, start and end dates. This will define the calendar range and progress."
+                  : "Define the current event's name, start and end dates to begin using the app."
                 }
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="startDate" className="font-semibold">Internship Start Date</Label>
+                <Label htmlFor="eventName" className="font-semibold flex items-center">
+                  <Tag className="w-4 h-4 mr-2 text-primary"/> Event Name
+                </Label>
+                <Input
+                  id="eventName"
+                  type="text"
+                  value={eventName}
+                  onChange={(e) => setEventName(e.target.value)}
+                  placeholder="e.g., Our Special Trip, Her Internship"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="startDate" className="font-semibold">Event Start Date</Label>
                  <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -111,7 +135,7 @@ export default function SetupPage() {
                 </Popover>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="endDate" className="font-semibold">Internship End Date</Label>
+                <Label htmlFor="endDate" className="font-semibold">Event End Date</Label>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -142,7 +166,7 @@ export default function SetupPage() {
                 <Trash2 className="w-4 h-4 mr-2"/> Reset All Data
               </Button>
               <Button type="submit" className="w-full sm:w-auto">
-                <Save className="w-4 h-4 mr-2"/> Save Dates
+                <Save className="w-4 h-4 mr-2"/> Save Event Details
               </Button>
             </CardFooter>
           </form>

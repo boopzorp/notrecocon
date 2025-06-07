@@ -7,13 +7,13 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Target } from "lucide-react";
 
-interface EventProgressBarProps { // Renamed interface
-  eventName: string | null; // New prop
-  eventStartDateString: string | null; // Renamed prop
-  eventEndDateString: string | null; // Renamed prop
+interface EventProgressBarProps {
+  eventName: string | null;
+  eventStartDateString: string | null;
+  eventEndDateString: string | null;
 }
 
-export function EventProgressBar({ eventName, eventStartDateString, eventEndDateString }: EventProgressBarProps) { // Renamed component and props
+export function EventProgressBar({ eventName, eventStartDateString, eventEndDateString }: EventProgressBarProps) {
   const [progress, setProgress] = useState(0);
   const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
 
@@ -23,18 +23,16 @@ export function EventProgressBar({ eventName, eventStartDateString, eventEndDate
   useEffect(() => {
     if (startDate && endDate && isValid(startDate) && isValid(endDate)) {
       const today = new Date();
-      today.setHours(0,0,0,0); // Normalize today to start of day
+      today.setHours(0,0,0,0); 
 
       const totalDays = differenceInCalendarDays(endDate, startDate);
       let daysPassed = differenceInCalendarDays(today, startDate);
       
-      // Clamp daysPassed between 0 and totalDays
       daysPassed = Math.max(0, Math.min(daysPassed, totalDays));
 
       if (totalDays > 0) {
         setProgress((daysPassed / totalDays) * 100);
       } else {
-        // If start and end date are same or start is after end
         setProgress(today >= endDate ? 100 : 0);
       }
       
@@ -47,7 +45,7 @@ export function EventProgressBar({ eventName, eventStartDateString, eventEndDate
     }
   }, [startDate, endDate]);
 
-  const progressBarTitle = eventName ? `Countdown: ${eventName}` : "Our Countdown"; // Use eventName in title
+  const progressBarTitle = eventName ? `Countdown for: ${eventName}` : "Our Countdown";
 
   if (!startDate || !endDate || !isValid(startDate) || !isValid(endDate)) {
     return (
@@ -59,7 +57,6 @@ export function EventProgressBar({ eventName, eventStartDateString, eventEndDate
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {/* Updated message */}
           <p className="text-muted-foreground">Please set the event name and dates in the Setup page to see the progress.</p>
         </CardContent>
       </Card>
@@ -84,10 +81,9 @@ export function EventProgressBar({ eventName, eventStartDateString, eventEndDate
         <Progress value={progress} className="w-full h-4" />
         <div className="text-center font-semibold text-accent">
           {daysRemaining !== null ? 
-            (daysRemaining > 0 ? `${daysRemaining} day${daysRemaining === 1 ? '' : 's'} until then!` : "The day is here!") : // Generalized message
+            (daysRemaining > 0 ? `${daysRemaining} day${daysRemaining === 1 ? '' : 's'} until it's here!` : "The day is here!") :
             "Calculating..."}
         </div>
-        {/* Generalized message */}
         {progress === 100 && <p className="text-center text-lg font-bold text-primary">The event has concluded or is today! 🎉</p>}
       </CardContent>
     </Card>

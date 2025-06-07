@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppContext } from '@/context/AppContext';
 import { AppContainer, PageSection } from '@/components/AppContainer';
-import { InternshipProgressBar } from '@/components/InternshipProgressBar';
+import { EventProgressBar } from '@/components/EventProgressBar'; // Renamed
 import { AppCalendarView } from '@/components/AppCalendarView';
 import { DailyDetailsCard } from '@/components/DailyDetailsCard';
 import type { DailyLog } from '@/lib/types';
@@ -17,17 +17,17 @@ import { parseISO, format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 
 export default function ReaderPage() {
-  const { internshipStart, internshipEnd, logs, getLog, upsertLog, isConfigured, isInitialized, userRole } = useAppContext();
+  const { eventName, eventStartDate, eventEndDate, logs, getLog, upsertLog, isConfigured, isInitialized, userRole } = useAppContext(); // Updated context fields
   const router = useRouter();
   const { toast } = useToast();
 
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(() => {
-    if (internshipStart) {
-      const start = parseISO(internshipStart);
+    if (eventStartDate) {
+      const start = parseISO(eventStartDate);
       const today = new Date();
       today.setHours(0,0,0,0);
-      if (internshipEnd) {
-        const end = parseISO(internshipEnd);
+      if (eventEndDate) {
+        const end = parseISO(eventEndDate);
         if (today >= start && today <= end) return today;
       }
       return start;
@@ -40,26 +40,24 @@ export default function ReaderPage() {
     if (isInitialized) {
       if (!userRole) {
         router.replace('/safe-space');
-        return; // Exit early if redirecting
+        return; 
       }
-      // If userRole is set, but dates aren't, the component will show the "Waiting for Setup" message.
-      // No explicit redirect to /setup for partner role here.
     }
   }, [isInitialized, userRole, isConfigured, router]);
 
   useEffect(() => {
-    if (internshipStart && internshipEnd && selectedDate) {
-      const start = parseISO(internshipStart);
-      const end = parseISO(internshipEnd);
+    if (eventStartDate && eventEndDate && selectedDate) {
+      const start = parseISO(eventStartDate);
+      const end = parseISO(eventEndDate);
       if (selectedDate < start || selectedDate > end) {
         setSelectedDate(start);
       }
-    } else if (internshipStart && !selectedDate) {
-      const start = parseISO(internshipStart);
+    } else if (eventStartDate && !selectedDate) {
+      const start = parseISO(eventStartDate);
       const today = new Date();
       today.setHours(0,0,0,0);
-       if (internshipEnd) {
-        const end = parseISO(internshipEnd);
+       if (eventEndDate) {
+        const end = parseISO(eventEndDate);
         if (today >= start && today <= end) {
           setSelectedDate(today);
           return;
@@ -67,9 +65,9 @@ export default function ReaderPage() {
       }
       setSelectedDate(start);
     }
-  }, [internshipStart, internshipEnd, selectedDate]);
+  }, [eventStartDate, eventEndDate, selectedDate]);
 
-  if (!isInitialized || !userRole) { // Added !userRole check here for loading state
+  if (!isInitialized || !userRole) { 
     return (
       <AppContainer showHomeButton={true}>
         <div className="flex justify-center items-center h-64">
@@ -79,7 +77,6 @@ export default function ReaderPage() {
     );
   }
 
-  // isConfigured check for UI message if userRole IS set but dates are not.
   if (!isConfigured()) {
      return (
       <AppContainer showHomeButton={true}>
@@ -88,7 +85,7 @@ export default function ReaderPage() {
             <AlertCircle className="w-12 h-12 mx-auto text-primary" />
             <h3 className="text-2xl font-semibold text-primary">Waiting for Setup</h3>
             <p className="text-muted-foreground">
-              The app isn't quite ready yet. Please ask the editor to configure the internship dates.
+              The app isn't quite ready yet. Please ask the editor to configure the event details.
             </p>
              <Button asChild variant="outline">
               <Link href="/" className="flex items-center gap-2">
@@ -115,14 +112,14 @@ export default function ReaderPage() {
   return (
     <AppContainer showHomeButton={true}>
       <PageSection title="Reader's Haven" titleClassName="text-accent">
-        <InternshipProgressBar startDateString={internshipStart} endDateString={internshipEnd} />
+        <EventProgressBar eventName={eventName} eventStartDateString={eventStartDate} eventEndDateString={eventEndDate} />
       </PageSection>
 
       <div className="grid md:grid-cols-2 gap-8 items-start">
         <PageSection title="Our Calendar" titleClassName="text-primary">
           <AppCalendarView
-            startDateString={internshipStart}
-            endDateString={internshipEnd}
+            eventStartDateString={eventStartDate}
+            eventEndDateString={eventEndDate}
             logs={logs}
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}
