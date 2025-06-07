@@ -23,7 +23,7 @@ type Action =
   | { type: 'INITIALIZE_APP'; payload: { settings: Partial<AppSettings>; logs: Record<string, DailyLog>; userRole: 'editor' | 'partner' } }
   | { type: 'SET_INTERNSHIP_DATES'; payload: { startDate: Date; endDate: Date } }
   | { type: 'UPSERT_LOG'; payload: { date: string; log: DailyLog } }
-  | { type: 'RESET_DATA_STATE' } 
+  | { type: 'RESET_DATA_STATE' }
   | { type: 'SET_USER_ROLE'; payload: 'editor' | 'partner' };
 
 const initialState: AppState = {
@@ -71,7 +71,6 @@ function appReducer(state: AppState, action: Action): AppState {
         },
       };
     case 'RESET_DATA_STATE':
-      // When resetting, try to preserve userRole if it was loaded, otherwise default
       const currentRole = state.isInitialized ? state.userRole : (localStorage.getItem(USER_ROLE_LOCAL_STORAGE_KEY) as 'editor' | 'partner' || 'editor');
       return { ...initialState, isInitialized: true, userRole: currentRole };
     case 'SET_USER_ROLE':
@@ -87,12 +86,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        // Load settings
         const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
         const settingsDocSnap = await getDoc(settingsDocRef);
         const appSettings: Partial<AppSettings> = settingsDocSnap.exists() ? (settingsDocSnap.data() as AppSettings) : {};
 
-        // Load logs
         const logsCollectionRef = collection(db, FIRESTORE_LOGS_COLLECTION_ID);
         const logsSnapshot = await getDocs(logsCollectionRef);
         const fetchedLogs: Record<string, DailyLog> = {};
@@ -100,7 +97,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           fetchedLogs[logDoc.id] = logDoc.data() as DailyLog;
         });
 
-        // Load user role from localStorage
         const storedUserRole = localStorage.getItem(USER_ROLE_LOCAL_STORAGE_KEY) as 'editor' | 'partner' | null;
         
         dispatch({ type: 'INITIALIZE_APP', payload: { settings: appSettings, logs: fetchedLogs, userRole: storedUserRole || 'editor' } });
@@ -140,13 +136,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const formattedDate = format(date, 'yyyy-MM-dd');
     try {
       const logDocRef = doc(db, FIRESTORE_LOGS_COLLECTION_ID, formattedDate);
-      // Ensure all fields are present and correctly typed for Firestore
       const dataToSave: DailyLog = {
         editorNotes: logData.editorNotes || [],
-        spotifyLink: typeof logData.spotifyLink === 'string' ? logData.spotifyLink : "", // Ensure spotifyLink is always a string
+        spotifyLink: typeof logData.spotifyLink === 'string' ? logData.spotifyLink : "",
+        songTitle: typeof logData.songTitle === 'string' ? logData.songTitle : "",
+        songArtist: typeof logData.songArtist === 'string' ? logData.songArtist : "",
         partnerNotes: logData.partnerNotes || [],
       };
-      await setDoc(logDocRef, dataToSave); 
+      await setDoc(logDocRef, dataToSave);
       dispatch({ type: 'UPSERT_LOG', payload: { date: formattedDate, log: dataToSave } });
     } catch (error) {
       console.error("Failed to save log to Firestore:", error);
@@ -158,7 +155,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [state.logs]);
 
   const isConfigured = useCallback((): boolean => {
-    return !!state.internshipStart && !!state.internshipEnd && 
+    return !!state.internshipStart && !!state.internshipEnd &&
            isValid(parseISO(state.internshipStart)) && isValid(parseISO(state.internshipEnd));
   }, [state.internshipStart, state.internshipEnd]);
   

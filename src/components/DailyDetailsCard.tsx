@@ -18,73 +18,94 @@ interface DailyDetailsCardProps {
   selectedDate: Date;
   log: DailyLog | undefined;
   onSave: (date: Date, log: DailyLog) => void;
-  onDelete?: (date: Date) => void; // For deleting entire day's entry
+  onDelete?: (date: Date) => void;
   mode: 'editor' | 'reader';
 }
 
 export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: DailyDetailsCardProps) {
   const [newEditorNoteText, setNewEditorNoteText] = useState('');
   const [spotifyLink, setSpotifyLink] = useState('');
-  const [newPartnerNoteText, setNewPartnerNoteText] = useState(''); 
-  
+  const [songTitle, setSongTitle] = useState('');
+  const [songArtist, setSongArtist] = useState('');
+  const [newPartnerNoteText, setNewPartnerNoteText] = useState('');
+
   const [suggestedReplies, setSuggestedReplies] = useState<string[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [errorSuggestions, setErrorSuggestions] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
-    setNewEditorNoteText(''); 
+    setNewEditorNoteText('');
     setSpotifyLink(log?.spotifyLink || '');
-    setNewPartnerNoteText(''); 
-    setSuggestedReplies([]); 
+    setSongTitle(log?.songTitle || '');
+    setSongArtist(log?.songArtist || '');
+    setNewPartnerNoteText('');
+    setSuggestedReplies([]);
     setErrorSuggestions(null);
   }, [log, selectedDate]);
 
   const handleEditorSaveNewNote = (e: FormEvent) => {
     e.preventDefault();
-    
+
     const updatedLog: DailyLog = {
-      editorNotes: newEditorNoteText.trim() 
-        ? [...(log?.editorNotes || []), newEditorNoteText] 
+      editorNotes: newEditorNoteText.trim()
+        ? [...(log?.editorNotes || []), newEditorNoteText]
         : (log?.editorNotes || []),
       spotifyLink: spotifyLink.trim(),
+      songTitle: songTitle.trim(),
+      songArtist: songArtist.trim(),
       partnerNotes: log?.partnerNotes || [],
     };
     onSave(selectedDate, updatedLog);
-    setNewEditorNoteText(''); 
+    setNewEditorNoteText('');
+    // Keep spotifyLink, songTitle, songArtist as they might be part of an ongoing edit for the day
   };
-  
+
   const handlePartnerSaveNewNote = (e: FormEvent) => {
     e.preventDefault();
-    if (!newPartnerNoteText.trim()) return; 
+    if (!newPartnerNoteText.trim()) return;
+
+    const currentLogSnapshot: DailyLog = log
+      ? {
+          editorNotes: Array.isArray(log.editorNotes) ? log.editorNotes : [],
+          spotifyLink: typeof log.spotifyLink === 'string' ? log.spotifyLink : '',
+          songTitle: typeof log.songTitle === 'string' ? log.songTitle : '',
+          songArtist: typeof log.songArtist === 'string' ? log.songArtist : '',
+          partnerNotes: Array.isArray(log.partnerNotes) ? log.partnerNotes : []
+        }
+      : { editorNotes: [], spotifyLink: '', songTitle: '', songArtist: '', partnerNotes: [] };
+
 
     const updatedLog: DailyLog = {
-      editorNotes: log?.editorNotes || [],
-      spotifyLink: log?.spotifyLink || '',
-      partnerNotes: [...(log?.partnerNotes || []), newPartnerNoteText],
+      ...currentLogSnapshot,
+      partnerNotes: [...(currentLogSnapshot.partnerNotes || []), newPartnerNoteText],
     };
     onSave(selectedDate, updatedLog);
-    setNewPartnerNoteText(''); 
+    setNewPartnerNoteText('');
   };
 
   const handleDeleteEntireEntry = () => {
     if (onDelete) {
-      onDelete(selectedDate); 
+      onDelete(selectedDate);
       setNewEditorNoteText('');
       setSpotifyLink('');
-      setNewPartnerNoteText(''); 
+      setSongTitle('');
+      setSongArtist('');
+      setNewPartnerNoteText('');
     }
   };
 
   const handleDeletePartnerNote = (indexToDelete: number) => {
-    const currentLogSnapshot: DailyLog = log 
-      ? { 
+     const currentLogSnapshot: DailyLog = log
+      ? {
           editorNotes: Array.isArray(log.editorNotes) ? log.editorNotes : [],
           spotifyLink: typeof log.spotifyLink === 'string' ? log.spotifyLink : '',
+          songTitle: typeof log.songTitle === 'string' ? log.songTitle : '',
+          songArtist: typeof log.songArtist === 'string' ? log.songArtist : '',
           partnerNotes: Array.isArray(log.partnerNotes) ? log.partnerNotes : []
-        } 
-      : { editorNotes: [], spotifyLink: '', partnerNotes: [] };
-    
+        }
+      : { editorNotes: [], spotifyLink: '', songTitle: '', songArtist: '', partnerNotes: [] };
+
     const currentPartnerNotes = currentLogSnapshot.partnerNotes;
 
     if (indexToDelete < 0 || indexToDelete >= currentPartnerNotes.length) {
@@ -106,7 +127,6 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     toast({
       title: "Note Deleted",
       description: "Your partner's note has been successfully deleted.",
-      variant: "destructive"
     });
   };
 
@@ -161,7 +181,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               <Label className="text-muted-foreground font-semibold flex items-center"><Music2 className="w-4 h-4 mr-2 text-accent"/>Their Song for the Day:</Label>
               <Button variant="link" asChild className="p-0 h-auto">
                 <a href={log.spotifyLink} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline truncate block">
-                  {log.spotifyLink}
+                  {log.songTitle && log.songArtist ? `${log.songTitle} - ${log.songArtist}` : log.spotifyLink}
                 </a>
               </Button>
             </div>
@@ -183,7 +203,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               </ul>
             </div>
           )}
-          
+
           <form onSubmit={handlePartnerSaveNewNote} className="space-y-3 pt-6 border-t">
             <Label htmlFor="newPartnerNote" className="flex items-center font-semibold text-base">
               <MessageSquarePlus className="w-5 h-5 mr-2 text-accent"/>Add Your Note:
@@ -196,7 +216,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               rows={3}
               className="bg-white"
             />
-             <Button type="submit" className="w-full sm:w-auto" disabled={!newPartnerNoteText.trim()}>
+             <Button type="submit" className="w-full" disabled={!newPartnerNoteText.trim()}>
                 <Save className="w-4 h-4 mr-2"/> Add My Note
               </Button>
           </form>
@@ -237,6 +257,26 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
             />
           </div>
           <div className="space-y-2">
+            <Label htmlFor="songTitle" className="flex items-center font-semibold"><Music2 className="w-4 h-4 mr-2 text-accent"/>Song Title</Label>
+            <Input
+              id="songTitle"
+              type="text"
+              value={songTitle}
+              onChange={(e) => setSongTitle(e.target.value)}
+              placeholder="e.g., Sunflower"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="songArtist" className="flex items-center font-semibold"><PenLine className="w-4 h-4 mr-2 text-accent"/>Song Artist</Label>
+            <Input
+              id="songArtist"
+              type="text"
+              value={songArtist}
+              onChange={(e) => setSongArtist(e.target.value)}
+              placeholder="e.g., Post Malone, Swae Lee"
+            />
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="spotifyLink" className="flex items-center font-semibold"><Music2 className="w-4 h-4 mr-2 text-accent"/>Spotify Song Link (Optional)</Label>
             <Input
               id="spotifyLink"
@@ -246,7 +286,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               placeholder="https://open.spotify.com/track/..."
             />
           </div>
-          
+
           {log?.partnerNotes && log.partnerNotes.length > 0 && (
             <div className="space-y-2 pt-4 border-t">
                 <Label className="text-muted-foreground font-semibold flex items-center"><Gift className="w-5 h-5 mr-2 text-accent"/>Notes From Your Partner:</Label>
@@ -260,7 +300,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
             </div>
           )}
 
-          {newEditorNoteText.trim() && (
+          {(newEditorNoteText.trim() || (log?.editorNotes && log.editorNotes.length > 0)) && (
             <div className="space-y-3 pt-4 border-t">
               <Button type="button" variant="outline" onClick={handleGetSuggestions} disabled={isLoadingSuggestions} className="w-full sm:w-auto">
                 <Lightbulb className="w-4 h-4 mr-2"/>
@@ -285,19 +325,16 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
 
         </CardContent>
         <CardFooter className="flex flex-col gap-3">
-          {onDelete && (log?.editorNotes?.length || log?.spotifyLink || log?.partnerNotes?.length) && ( 
+          {onDelete && (log?.editorNotes?.length || log?.spotifyLink || log?.partnerNotes?.length || log?.songTitle || log?.songArtist) && (
              <Button type="button" variant="destructive" onClick={handleDeleteEntireEntry} className="w-full">
                 <Trash2 className="w-4 h-4 mr-2"/> Delete Entire Day's Entry
               </Button>
           )}
           <Button type="submit" className="w-full whitespace-normal text-center h-auto">
-            <PlusCircle className="w-4 h-4 mr-2"/> Add Note / Update Link
+            <PlusCircle className="w-4 h-4 mr-2"/> Add Note / Update Song Details
           </Button>
         </CardFooter>
       </form>
     </Card>
   );
 }
-    
-
-    

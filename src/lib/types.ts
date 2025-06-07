@@ -1,13 +1,16 @@
+
 export interface DailyLog {
-  editorNotes?: string[]; // Changed from note: string
+  editorNotes?: string[];
   spotifyLink: string;
+  songTitle?: string;
+  songArtist?: string;
   partnerNotes?: string[];
 }
 
 export interface AppSettings {
   internshipStart: string | null; // ISO string
   internshipEnd: string | null; // ISO string
-  userRole?: 'editor' | 'partner'; 
+  userRole?: 'editor' | 'partner';
 }
 
 export interface AppData extends AppSettings {
