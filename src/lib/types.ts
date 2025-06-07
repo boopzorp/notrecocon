@@ -6,6 +6,7 @@ export interface DailyLog {
 export interface AppSettings {
   internshipStart: string | null; // ISO string
   internshipEnd: string | null; // ISO string
+  userRole?: 'editor' | 'partner'; // Added userRole
 }
 
 export interface AppData extends AppSettings {

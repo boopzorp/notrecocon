@@ -1,10 +1,29 @@
+"use client";
+
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { AppContainer } from '@/components/AppContainer';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Edit3, Eye, Gift } from 'lucide-react';
+import { useAppContext } from '@/context/AppContext';
+import { useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
 
 export default function HomePage() {
+  const { userRole, setUserRole } = useAppContext();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const mode = searchParams.get('mode');
+    if (mode === 'partner') {
+      setUserRole('partner');
+    } else if (mode === 'editor') {
+      setUserRole('editor');
+    }
+  }, [searchParams, setUserRole]);
+
+  const isPartner = userRole === 'partner';
+
   return (
     <AppContainer>
       <div className="flex flex-col items-center text-center space-y-12">
@@ -20,25 +39,34 @@ export default function HomePage() {
               Choose your path below to continue our journey, even when miles apart.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button asChild size="lg" className="w-full sm:w-auto bg-primary hover:bg-primary/90">
-                <Link href="/editor" className="flex items-center gap-2">
-                  <Edit3 className="w-5 h-5" />
-                  Editor's Nook
-                </Link>
-              </Button>
-              <Button asChild variant="secondary" size="lg" className="w-full sm:w-auto">
+              {!isPartner && (
+                <Button asChild size="lg" className="w-full sm:w-auto bg-primary hover:bg-primary/90">
+                  <Link href="/editor" className="flex items-center gap-2">
+                    <Edit3 className="w-5 h-5" />
+                    Editor's Nook
+                  </Link>
+                </Button>
+              )}
+              <Button 
+                asChild 
+                variant={isPartner ? "default" : "secondary"} 
+                size="lg" 
+                className={`w-full sm:w-auto ${isPartner ? 'bg-primary hover:bg-primary/90' : ''}`}
+              >
                 <Link href="/reader" className="flex items-center gap-2">
                   <Eye className="w-5 h-5" />
                   Reader's Haven
                 </Link>
               </Button>
             </div>
-             <Button asChild variant="outline" size="lg" className="w-full sm:w-auto">
-                <Link href="/setup" className="flex items-center gap-2">
-                  <Gift className="w-5 h-5" />
-                  Setup/Reset
-                </Link>
-              </Button>
+             {!isPartner && (
+                <Button asChild variant="outline" size="lg" className="w-full sm:w-auto">
+                  <Link href="/setup" className="flex items-center gap-2">
+                    <Gift className="w-5 h-5" />
+                    Setup/Reset
+                  </Link>
+                </Button>
+              )}
           </CardContent>
         </Card>
       </div>

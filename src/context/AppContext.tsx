@@ -9,19 +9,22 @@ const LOCAL_STORAGE_KEY = 'heartbeatsAwayData';
 
 interface AppState extends AppData {
   isInitialized: boolean;
+  userRole: 'editor' | 'partner'; // Made userRole non-optional in state
 }
 
 type Action =
   | { type: 'INITIALIZE'; payload: Partial<AppState> }
   | { type: 'SET_INTERNSHIP_DATES'; payload: { startDate: Date; endDate: Date } }
   | { type: 'UPSERT_LOG'; payload: { date: string; log: DailyLog } }
-  | { type: 'RESET_DATA' };
+  | { type: 'RESET_DATA' }
+  | { type: 'SET_USER_ROLE'; payload: 'editor' | 'partner' }; // Added SET_USER_ROLE action
 
 const initialState: AppState = {
   internshipStart: null,
   internshipEnd: null,
   logs: {},
   isInitialized: false,
+  userRole: 'editor', // Default role
 };
 
 const AppContext = createContext<
@@ -31,13 +34,14 @@ const AppContext = createContext<
     getLog: (date: Date) => DailyLog | undefined;
     isConfigured: () => boolean;
     resetData: () => void;
+    setUserRole: (role: 'editor' | 'partner') => void; // Added setUserRole
   }) | undefined
 >(undefined);
 
 function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'INITIALIZE':
-      return { ...state, ...action.payload, isInitialized: true };
+      return { ...state, ...action.payload, userRole: action.payload.userRole || 'editor', isInitialized: true };
     case 'SET_INTERNSHIP_DATES':
       return {
         ...state,
@@ -54,7 +58,9 @@ function appReducer(state: AppState, action: Action): AppState {
       };
     case 'RESET_DATA':
       localStorage.removeItem(LOCAL_STORAGE_KEY);
-      return { ...initialState, isInitialized: true }; // Reset to initial but mark as initialized
+      return { ...initialState, isInitialized: true, userRole: 'editor' }; // Ensure userRole resets to editor
+    case 'SET_USER_ROLE': // Handle SET_USER_ROLE
+      return { ...state, userRole: action.payload };
     default:
       return state;
   }
@@ -68,13 +74,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const storedData = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (storedData) {
         const parsedData = JSON.parse(storedData) as Partial<AppData>;
-        dispatch({ type: 'INITIALIZE', payload: parsedData });
+        dispatch({ type: 'INITIALIZE', payload: { ...parsedData, userRole: parsedData.userRole || 'editor' } });
       } else {
-        dispatch({ type: 'INITIALIZE', payload: {} });
+        dispatch({ type: 'INITIALIZE', payload: { userRole: 'editor' } });
       }
     } catch (error) {
       console.error("Failed to load data from localStorage", error);
-      dispatch({ type: 'INITIALIZE', payload: {} });
+      dispatch({ type: 'INITIALIZE', payload: { userRole: 'editor' } });
     }
   }, []);
 
@@ -85,6 +91,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           internshipStart: state.internshipStart,
           internshipEnd: state.internshipEnd,
           logs: state.logs,
+          userRole: state.userRole, // Persist userRole
         };
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(dataToStore));
       } catch (error) {
@@ -114,8 +121,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     dispatch({ type: 'RESET_DATA' });
   }, []);
 
+  const setUserRole = useCallback((role: 'editor' | 'partner') => { // Define setUserRole
+    dispatch({ type: 'SET_USER_ROLE', payload: role });
+  }, []);
+
   return (
-    <AppContext.Provider value={{ ...state, setInternshipDates, upsertLog, getLog, isConfigured, resetData }}>
+    <AppContext.Provider value={{ ...state, setInternshipDates, upsertLog, getLog, isConfigured, resetData, setUserRole }}>
       {children}
     </AppContext.Provider>
   );
