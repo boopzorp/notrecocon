@@ -9,7 +9,7 @@ import { AppContainer, PageSection } from '@/components/AppContainer';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { CalendarDays, ChevronRight, PlusCircle, Trash2, AlertTriangle, Info } from 'lucide-react';
+import { CalendarDays, ChevronRight, PlusCircle, Trash2, AlertTriangle, Info, LogOut } from 'lucide-react';
 import { format, parseISO, differenceInCalendarDays, isPast } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import type { Event } from '@/lib/types';
@@ -44,7 +44,7 @@ function isToday(date: Date): boolean {
 
 
 export default function EventsPage() {
-  const { events, userRole, selectEvent, isLoadingEvents, isInitialized, resetAllAppData } = useAppContext();
+  const { events, userRole, selectEvent, setUserRole, isLoadingEvents, isInitialized, resetAllAppData } = useAppContext();
   const router = useRouter();
   const { toast } = useToast();
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
@@ -80,6 +80,16 @@ export default function EventsPage() {
       variant: "destructive"
     });
     setIsResetDialogOpen(false); // Close dialog after reset
+  };
+
+  const handleLogout = () => {
+    setUserRole(null); 
+    selectEvent(null); // Clear the selected event
+    router.push('/safe-space'); 
+    toast({
+      title: "Logged Out",
+      description: "You have successfully left Our Safe Space.",
+    });
   };
 
   const isEditor = userRole === 'editor';
@@ -180,10 +190,14 @@ export default function EventsPage() {
                  </CardContent>
             </Card>
         )}
+
+        <div className="mt-12 text-center">
+          <Button variant="ghost" onClick={handleLogout} size="lg" className="text-muted-foreground hover:text-destructive">
+            <LogOut className="w-5 h-5 mr-2" /> Leave Our Space
+          </Button>
+        </div>
+
       </PageSection>
     </AppContainer>
   );
 }
-
-
-    
