@@ -74,7 +74,7 @@ export default function SafeSpacePage() {
               {/* KeyRound icon removed from here */}
               <CardTitle className="font-headline text-4xl text-accent pt-4">Our Safe Space</CardTitle>
               <CardDescription className="text-muted-foreground text-lg">
-                Enter your secret code to continue our journey.
+                A space for everything that matters.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
