@@ -17,7 +17,7 @@ import { parseISO, format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 
 export default function ReaderPage() {
-  const { internshipStart, internshipEnd, logs, getLog, upsertLog, isConfigured, isInitialized } = useAppContext();
+  const { internshipStart, internshipEnd, logs, getLog, upsertLog, isConfigured, isInitialized, userRole } = useAppContext();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -37,10 +37,15 @@ export default function ReaderPage() {
 
 
   useEffect(() => {
-    if (isInitialized && !isConfigured()) {
-      // Message handled by component
+    if (isInitialized) {
+      if (!userRole) {
+        router.replace('/safe-space');
+        return; // Exit early if redirecting
+      }
+      // If userRole is set, but dates aren't, the component will show the "Waiting for Setup" message.
+      // No explicit redirect to /setup for partner role here.
     }
-  }, [isInitialized, isConfigured, router]);
+  }, [isInitialized, userRole, isConfigured, router]);
 
   useEffect(() => {
     if (internshipStart && internshipEnd && selectedDate) {
@@ -64,7 +69,7 @@ export default function ReaderPage() {
     }
   }, [internshipStart, internshipEnd, selectedDate]);
 
-  if (!isInitialized) {
+  if (!isInitialized || !userRole) { // Added !userRole check here for loading state
     return (
       <AppContainer showHomeButton={true}>
         <div className="flex justify-center items-center h-64">
@@ -74,6 +79,7 @@ export default function ReaderPage() {
     );
   }
 
+  // isConfigured check for UI message if userRole IS set but dates are not.
   if (!isConfigured()) {
      return (
       <AppContainer showHomeButton={true}>

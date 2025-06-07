@@ -22,6 +22,7 @@ export default function HomePage() {
 
   if (!isInitialized || !userRole) {
     // Show a loading state or minimal content while redirecting or initializing
+    // This will typically be very brief as the useEffect above will redirect.
     return (
       <AppContainer>
         <div className="flex justify-center items-center h-64">
@@ -34,7 +35,8 @@ export default function HomePage() {
   const isPartner = userRole === 'partner';
 
   const handleLogout = () => {
-    setUserRole(null); // This will also clear localStorage and trigger redirect via useEffect
+    setUserRole(null); 
+    router.push('/safe-space'); // Explicitly redirect to safe-space
   };
 
   return (

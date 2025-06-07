@@ -17,7 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { format, parseISO } from 'date-fns';
 
 export default function EditorPage() {
-  const { internshipStart, internshipEnd, logs, upsertLog, getLog, isConfigured, isInitialized } = useAppContext();
+  const { internshipStart, internshipEnd, logs, upsertLog, getLog, isConfigured, isInitialized, userRole } = useAppContext();
   const router = useRouter();
   const { toast } = useToast();
   
@@ -37,10 +37,16 @@ export default function EditorPage() {
   });
 
   useEffect(() => {
-    if (isInitialized && !isConfigured()) {
-      router.replace('/setup');
+    if (isInitialized) {
+      if (!userRole) {
+        router.replace('/safe-space');
+        return; // Exit early to prevent further checks if redirecting
+      }
+      if (!isConfigured()) {
+        router.replace('/setup');
+      }
     }
-  }, [isInitialized, isConfigured, router]);
+  }, [isInitialized, userRole, isConfigured, router]);
   
   useEffect(() => {
     if (internshipStart && internshipEnd && selectedDate) {
@@ -65,7 +71,7 @@ export default function EditorPage() {
   }, [internshipStart, internshipEnd, selectedDate]);
 
 
-  if (!isInitialized) {
+  if (!isInitialized || !userRole) { // Added !userRole check here too for loading state
     return (
       <AppContainer showHomeButton={true}>
         <div className="flex justify-center items-center h-64">
@@ -75,6 +81,8 @@ export default function EditorPage() {
     );
   }
   
+  // isConfigured check for UI message is still relevant if userRole IS set but dates are not.
+  // The useEffect above handles the redirect if !isConfigured().
   if (!isConfigured()) {
      return (
       <AppContainer showHomeButton={true}>
@@ -106,7 +114,7 @@ export default function EditorPage() {
   };
 
   const handleDeleteLog = (date: Date) => {
-    upsertLog(date, { editorNotes: [], spotifyLink: "", partnerNotes: [] }); // Clear all parts of the log
+    upsertLog(date, { editorNotes: [], spotifyLink: "", songTitle: "", partnerNotes: [] }); // Clear all parts of the log
     toast({
       title: "Log Deleted!",
       description: `Your entry for ${format(date, "MMMM do, yyyy")} has been cleared.`,
