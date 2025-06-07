@@ -7,20 +7,22 @@ import { AppContainer, PageSection } from '@/components/AppContainer';
 import { InternshipProgressBar } from '@/components/InternshipProgressBar';
 import { AppCalendarView } from '@/components/AppCalendarView';
 import { DailyDetailsCard } from '@/components/DailyDetailsCard';
+import type { DailyLog } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { AlertCircle, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { parseISO } from 'date-fns';
+import { parseISO, format } from 'date-fns';
+import { useToast } from '@/hooks/use-toast';
 
 export default function ReaderPage() {
-  const { internshipStart, internshipEnd, logs, getLog, isConfigured, isInitialized } = useAppContext();
+  const { internshipStart, internshipEnd, logs, getLog, upsertLog, isConfigured, isInitialized } = useAppContext();
   const router = useRouter();
+  const { toast } = useToast();
 
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(() => {
     if (internshipStart) {
       const start = parseISO(internshipStart);
-      // Default to today if within range, else start date
       const today = new Date();
       today.setHours(0,0,0,0);
       if (internshipEnd) {
@@ -35,12 +37,10 @@ export default function ReaderPage() {
 
   useEffect(() => {
     if (isInitialized && !isConfigured()) {
-      // For reader, if not configured, perhaps show a message rather than redirecting to setup
-      // Or redirect to a "waiting" page. For now, the components handle lack of config.
+      // Message handled by component
     }
   }, [isInitialized, isConfigured, router]);
 
-  // Adjust selectedDate if internship dates change and selectedDate is outside new range
   useEffect(() => {
     if (internshipStart && internshipEnd && selectedDate) {
       const start = parseISO(internshipStart);
@@ -96,6 +96,15 @@ export default function ReaderPage() {
   
   const currentLog = selectedDate ? getLog(selectedDate) : undefined;
 
+  const handleSavePartnerNote = (date: Date, logWithPartnerNote: DailyLog) => {
+    upsertLog(date, logWithPartnerNote);
+    toast({
+      title: "Note Saved!",
+      description: `Your special note for ${format(date, "MMMM do, yyyy")} has been saved.`,
+      className: "bg-secondary text-secondary-foreground",
+    });
+  };
+
   return (
     <AppContainer showHomeButton={true}>
       <PageSection title="Reader's Haven" titleClassName="text-accent">
@@ -119,13 +128,13 @@ export default function ReaderPage() {
             <DailyDetailsCard
               selectedDate={selectedDate}
               log={currentLog}
-              onSave={() => {}} // No-op for reader
+              onSave={handleSavePartnerNote} // Partner saves their note
               mode="reader"
             />
           ) : (
              <Card className="shadow-md">
               <CardContent className="p-6 text-center">
-                <p className="text-muted-foreground">Select a date from the calendar to view the entry for that day.</p>
+                <p className="text-muted-foreground">Select a date from the calendar to view the entry or leave a note for that day.</p>
               </CardContent>
             </Card>
           )}

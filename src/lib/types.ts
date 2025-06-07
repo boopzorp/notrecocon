@@ -1,6 +1,7 @@
 export interface DailyLog {
   note: string;
   spotifyLink: string;
+  partnerNote?: string; // Added field for partner's notes
 }
 
 export interface AppSettings {
