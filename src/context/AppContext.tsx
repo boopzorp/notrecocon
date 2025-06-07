@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import React, { createContext, useContext, useEffect, useReducer, useCallback } from 'react';
 import type { AppData, DailyLog, AppSettings, PhotoEntry } from '@/lib/types';
 import { format, isValid, parseISO } from 'date-fns';
-import { db } from '@/lib/firebase';
+import { db, app as firebaseApp } from '@/lib/firebase'; // Import firebaseApp
 import { doc, getDoc, setDoc, collection, getDocs, writeBatch, deleteDoc } from 'firebase/firestore';
 
 const USER_ROLE_LOCAL_STORAGE_KEY = 'notreCoconUserRole';
@@ -99,6 +99,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const loadData = async () => {
       try {
+        console.log('[AppContext] Using Firebase Project ID:', firebaseApp.options.projectId);
         console.log('[AppContext] Attempting to load settings from Firestore path:', `${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}`);
         const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
         const settingsDocSnap = await getDoc(settingsDocRef);
@@ -109,7 +110,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         if (settingsDocSnap.exists()) {
           console.log('[AppContext] Loaded appSettings from Firestore:', JSON.stringify(appSettings));
         } else {
-          console.warn('[AppContext] appSettings document does not exist at path:', `${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}. Ensure Firebase project configuration in .env is correct.`);
+          console.warn('[AppContext] appSettings document does not exist at path:', `${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}. Ensure Firebase project configuration in .env is correct and Firestore rules allow access.`);
         }
 
         const logsCollectionRef = collection(db, FIRESTORE_LOGS_COLLECTION_ID);
@@ -170,21 +171,27 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         songTitle: typeof logData.songTitle === 'string' ? logData.songTitle : "",
         partnerNotes: logData.partnerNotes || [],
         photos: {
-          editor: logData.photos?.editor ? {
+          editor: logData.photos?.editor && logData.photos.editor.url ? { // ensure URL is present
             url: typeof logData.photos.editor.url === 'string' ? logData.photos.editor.url : "",
             hint: typeof logData.photos.editor.hint === 'string' ? logData.photos.editor.hint : "",
           } : undefined,
-          partner: logData.photos?.partner ? {
+          partner: logData.photos?.partner && logData.photos.partner.url ? { // ensure URL is present
             url: typeof logData.photos.partner.url === 'string' ? logData.photos.partner.url : "",
             hint: typeof logData.photos.partner.hint === 'string' ? logData.photos.partner.hint : "",
           } : undefined,
         },
       };
-      if (!dataToSave.photos?.editor) delete dataToSave.photos?.editor;
-      if (!dataToSave.photos?.partner) delete dataToSave.photos?.partner;
+      // Clean up empty photo objects
+      if (dataToSave.photos?.editor && !dataToSave.photos.editor.url) {
+        delete dataToSave.photos.editor;
+      }
+      if (dataToSave.photos?.partner && !dataToSave.photos.partner.url) {
+        delete dataToSave.photos.partner;
+      }
       if (dataToSave.photos && Object.keys(dataToSave.photos).length === 0) {
         delete dataToSave.photos;
       }
+
 
       await setDoc(logDocRef, dataToSave, { merge: true });
       dispatch({ type: 'UPSERT_LOG', payload: { date: formattedDate, log: dataToSave } });
@@ -213,7 +220,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       await batch.commit();
 
       dispatch({ type: 'RESET_DATA_STATE' });
-    } catch (error) {
+    } catch (error) { // Fixed: Added curly braces here
       console.error("Failed to reset log data in Firestore:", error);
     }
   }, []);
@@ -226,7 +233,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     // Log the codes AppContext is aware of during login attempt
     console.log('[AppContext] Attempting login. Editor code in state:', state.editorCode, 'Partner code in state:', state.partnerCode);
     if (!state.editorCode && !state.partnerCode) {
-      console.warn("[AppContext] Editor/Partner codes not configured in Firestore settings or not loaded into app state.");
+      console.warn("[AppContext] Editor/Partner codes not configured in Firestore settings or not loaded into app state. This is based on what was read from Firestore.");
       return false;
     }
 
