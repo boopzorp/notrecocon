@@ -77,24 +77,35 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   };
 
   const handleDeleteEditorNote = (indexToDelete: number) => {
-    // Create a snapshot of the current log state from props, or a default structure if log is undefined
+    // Create a snapshot of the current log state from props, or a default structure.
+    // Ensure all fields are initialized correctly.
     const currentLogSnapshot: DailyLog = log 
-      ? { ...log, editorNotes: log.editorNotes || [], partnerNotes: log.partnerNotes || [], spotifyLink: log.spotifyLink || '' } 
+      ? { 
+          editorNotes: Array.isArray(log.editorNotes) ? log.editorNotes : [],
+          spotifyLink: typeof log.spotifyLink === 'string' ? log.spotifyLink : '',
+          partnerNotes: Array.isArray(log.partnerNotes) ? log.partnerNotes : []
+        } 
       : { editorNotes: [], spotifyLink: '', partnerNotes: [] };
 
-    const currentEditorNotes = currentLogSnapshot.editorNotes!; // Known to be an array due to snapshot creation
+    const currentEditorNotes = currentLogSnapshot.editorNotes;
 
     if (indexToDelete < 0 || indexToDelete >= currentEditorNotes.length) {
       console.error("Invalid index for deleting editor note. Index:", indexToDelete, "Notes:", currentEditorNotes);
+      toast({
+        title: "Error",
+        description: "Could not delete note: invalid index.",
+        variant: "destructive"
+      });
       return;
     }
 
     const updatedEditorNotes = currentEditorNotes.filter((_, index) => index !== indexToDelete);
 
     // Construct the log object to be saved, ensuring all fields are present
+    // Start with the snapshot and override editorNotes.
     const logToSave: DailyLog = {
-      ...currentLogSnapshot, // Spread the consistent snapshot
-      editorNotes: updatedEditorNotes, // Override with the filtered array
+      ...currentLogSnapshot,
+      editorNotes: updatedEditorNotes,
     };
     
     onSave(selectedDate, logToSave);
@@ -107,22 +118,36 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   };
 
   const handleDeletePartnerNote = (indexToDelete: number) => {
-    const currentPartnerNotes = log?.partnerNotes || [];
+     // Create a snapshot of the current log state from props, or a default structure.
+    const currentLogSnapshot: DailyLog = log 
+      ? { 
+          editorNotes: Array.isArray(log.editorNotes) ? log.editorNotes : [],
+          spotifyLink: typeof log.spotifyLink === 'string' ? log.spotifyLink : '',
+          partnerNotes: Array.isArray(log.partnerNotes) ? log.partnerNotes : []
+        } 
+      : { editorNotes: [], spotifyLink: '', partnerNotes: [] };
+    
+    const currentPartnerNotes = currentLogSnapshot.partnerNotes;
+
     if (indexToDelete < 0 || indexToDelete >= currentPartnerNotes.length) {
       console.error("Invalid index for deleting partner note.");
+      toast({
+        title: "Error",
+        description: "Could not delete partner note: invalid index.",
+        variant: "destructive"
+      });
       return;
     }
     const updatedPartnerNotes = currentPartnerNotes.filter((_, index) => index !== indexToDelete);
 
     const updatedLog: DailyLog = {
-      editorNotes: log?.editorNotes || [], 
-      spotifyLink: log?.spotifyLink || '',   
+      ...currentLogSnapshot,
       partnerNotes: updatedPartnerNotes,
     };
     onSave(selectedDate, updatedLog);
     toast({
       title: "Note Deleted",
-      description: "Your note has been successfully deleted.",
+      description: "Your partner's note has been successfully deleted.",
       variant: "destructive"
     });
   };
@@ -166,7 +191,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               <Label className="text-muted-foreground font-semibold flex items-center"><BookOpen className="w-4 h-4 mr-2 text-accent"/> Their Thoughts:</Label>
               <ul className="space-y-2 mt-1">
                 {log.editorNotes.map((eNote, index) => (
-                  <li key={`reader-editor-${eNote}-${index}`} className="whitespace-pre-wrap text-sm p-3 border rounded-md bg-secondary/30">
+                  <li key={`reader-editor-note-${index}`} className="whitespace-pre-wrap text-sm p-3 border rounded-md bg-secondary/30">
                     {eNote}
                   </li>
                 ))}
@@ -189,7 +214,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               <Label className="font-semibold flex items-center"><MessagesSquare className="w-5 h-5 mr-2 text-accent"/>Your Notes for Them:</Label>
               <ul className="space-y-2 mt-2">
                 {log.partnerNotes.map((pNote, index) => (
-                  <li key={`partner-${pNote}-${index}`} className="flex justify-between items-start whitespace-pre-wrap text-sm p-3 border rounded-md bg-background shadow-sm">
+                  <li key={`partner-note-${index}`} className="flex justify-between items-start whitespace-pre-wrap text-sm p-3 border rounded-md bg-background shadow-sm">
                     <span>{pNote}</span>
                     <Button variant="ghost" size="icon" onClick={() => handleDeletePartnerNote(index)} className="h-6 w-6 p-0 ml-2 shrink-0 text-muted-foreground hover:text-destructive">
                       <Trash2 className="w-4 h-4" />
@@ -236,7 +261,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               <Label className="font-semibold flex items-center"><BookOpen className="w-4 h-4 mr-2 text-accent"/>Your Saved Notes:</Label>
               <ul className="space-y-2 mt-1">
                 {log.editorNotes.map((eNote, index) => (
-                  <li key={`editor-${eNote}-${index}`} className="flex justify-between items-start whitespace-pre-wrap text-sm p-3 border rounded-md bg-secondary/50">
+                  <li key={`editor-note-${index}`} className="flex justify-between items-start whitespace-pre-wrap text-sm p-3 border rounded-md bg-secondary/50">
                      <span>{eNote}</span>
                      <Button variant="ghost" size="icon" onClick={() => handleDeleteEditorNote(index)} className="h-6 w-6 p-0 ml-2 shrink-0 text-muted-foreground hover:text-destructive">
                       <Trash2 className="w-4 h-4" />
@@ -273,7 +298,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
                 <Label className="text-muted-foreground font-semibold flex items-center"><Gift className="w-5 h-5 mr-2 text-accent"/>Notes From Your Partner:</Label>
                  <ul className="space-y-2 mt-1">
                     {log.partnerNotes.map((pNote, index) => (
-                    <li key={`editor-partner-${pNote}-${index}`} className="whitespace-pre-wrap text-sm p-3 border rounded-md bg-secondary/50">
+                    <li key={`editor-partner-note-${index}`} className="whitespace-pre-wrap text-sm p-3 border rounded-md bg-secondary/50">
                         {pNote}
                     </li>
                     ))}
@@ -320,3 +345,4 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   );
 }
 
+    
