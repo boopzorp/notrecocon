@@ -4,7 +4,7 @@ import { AppProvider } from '@/context/AppContext';
 import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
-  title: 'Heartbeats Away',
+  title: 'Notre Cocon',
   description: 'A special app for my faraway love.',
 };
 

@@ -15,7 +15,7 @@ export function AppContainer({ children, showHomeButton = false }: AppContainerP
       <header className="w-full max-w-4xl mb-8 flex justify-between items-center">
         <Logo />
         {showHomeButton && (
-          <Button variant="ghost" asChild className="text-primary">
+          <Button variant="ghost" asChild className="text-primary hover:bg-accent hover:text-accent-foreground">
             <Link href="/" aria-label="Go to homepage">
               <Home className="w-6 h-6" />
             </Link>
@@ -27,7 +27,7 @@ export function AppContainer({ children, showHomeButton = false }: AppContainerP
       </main>
       <footer className="w-full max-w-4xl mt-12 text-center py-4">
         <p className="text-sm text-muted-foreground">
-          Made with <Heart className="inline h-4 w-4 text-accent fill-accent" /> for my special someone.
+          Made with <Heart className="inline h-4 w-4 text-accent fill-accent" /> for mi amor.
         </p>
       </footer>
     </div>
