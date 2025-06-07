@@ -42,7 +42,6 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
 
   const handleEditorSaveNewNote = (e: FormEvent) => {
     e.preventDefault();
-    // No validation needed here to allow saving just a link or just a note
     
     const updatedLog: DailyLog = {
       editorNotes: newEditorNoteText.trim() 
@@ -53,7 +52,6 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     };
     onSave(selectedDate, updatedLog);
     setNewEditorNoteText(''); 
-    // Toast handled by parent EditorPage
   };
   
   const handlePartnerSaveNewNote = (e: FormEvent) => {
@@ -67,7 +65,6 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     };
     onSave(selectedDate, updatedLog);
     setNewPartnerNoteText(''); 
-    // Toast handled by parent ReaderPage
   };
 
   const handleDeleteEntireEntry = () => {
@@ -87,12 +84,10 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     }
     const updatedEditorNotes = currentEditorNotes.filter((_, index) => index !== indexToDelete);
     
-    // Explicitly construct the log with the updated editorNotes
-    // and current values for other fields from the editor's perspective.
     const updatedLog: DailyLog = {
       editorNotes: updatedEditorNotes,
-      spotifyLink: spotifyLink, // Use the current value from the spotifyLink input state
-      partnerNotes: log?.partnerNotes || [], // Preserve existing partner notes
+      spotifyLink: log?.spotifyLink || '', // Use log prop for spotifyLink
+      partnerNotes: log?.partnerNotes || [], 
     };
     onSave(selectedDate, updatedLog);
     toast({
@@ -110,11 +105,9 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     }
     const updatedPartnerNotes = currentPartnerNotes.filter((_, index) => index !== indexToDelete);
 
-    // Explicitly construct the log with the updated partnerNotes
-    // and current values for other fields from the log prop.
     const updatedLog: DailyLog = {
-      editorNotes: log?.editorNotes || [], // Preserve existing editor notes
-      spotifyLink: log?.spotifyLink || '',   // Preserve existing spotify link
+      editorNotes: log?.editorNotes || [], 
+      spotifyLink: log?.spotifyLink || '',   
       partnerNotes: updatedPartnerNotes,
     };
     onSave(selectedDate, updatedLog);
