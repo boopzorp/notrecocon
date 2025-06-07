@@ -99,7 +99,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        console.log('[AppContext] Using Firebase Project ID:', firebaseApp.options.projectId);
+        // console.log('[AppContext] Using Firebase Project ID:', firebaseApp.options.projectId); // Removed for brevity, confirmed working
         console.log('[AppContext] Attempting to load settings from Firestore path:', `${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}`);
         const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
         const settingsDocSnap = await getDoc(settingsDocRef);
@@ -171,17 +171,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         songTitle: typeof logData.songTitle === 'string' ? logData.songTitle : "",
         partnerNotes: logData.partnerNotes || [],
         photos: {
-          editor: logData.photos?.editor && logData.photos.editor.url ? { // ensure URL is present
+          editor: logData.photos?.editor && logData.photos.editor.url ? { 
             url: typeof logData.photos.editor.url === 'string' ? logData.photos.editor.url : "",
             hint: typeof logData.photos.editor.hint === 'string' ? logData.photos.editor.hint : "",
           } : undefined,
-          partner: logData.photos?.partner && logData.photos.partner.url ? { // ensure URL is present
+          partner: logData.photos?.partner && logData.photos.partner.url ? { 
             url: typeof logData.photos.partner.url === 'string' ? logData.photos.partner.url : "",
             hint: typeof logData.photos.partner.hint === 'string' ? logData.photos.partner.hint : "",
           } : undefined,
         },
       };
-      // Clean up empty photo objects
+      
       if (dataToSave.photos?.editor && !dataToSave.photos.editor.url) {
         delete dataToSave.photos.editor;
       }
@@ -220,7 +220,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       await batch.commit();
 
       dispatch({ type: 'RESET_DATA_STATE' });
-    } catch (error) { // Fixed: Added curly braces here
+    } catch (error) {
       console.error("Failed to reset log data in Firestore:", error);
     }
   }, []);
@@ -230,7 +230,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       console.warn("[AppContext] Attempted login before app context initialized.");
       return false;
     }
-    // Log the codes AppContext is aware of during login attempt
+    
     console.log('[AppContext] Attempting login. Editor code in state:', state.editorCode, 'Partner code in state:', state.partnerCode);
     if (!state.editorCode && !state.partnerCode) {
       console.warn("[AppContext] Editor/Partner codes not configured in Firestore settings or not loaded into app state. This is based on what was read from Firestore.");
