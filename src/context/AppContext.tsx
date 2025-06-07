@@ -1,47 +1,61 @@
+
 "use client";
 
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useEffect, useReducer, useCallback } from 'react';
-import type { AppData, DailyLog } from '@/lib/types';
+import type { AppData, DailyLog, AppSettings } from '@/lib/types';
 import { format, isValid, parseISO } from 'date-fns';
+import { db } from '@/lib/firebase';
+import { doc, getDoc, setDoc, collection, getDocs, writeBatch, deleteDoc } from 'firebase/firestore';
 
-const LOCAL_STORAGE_KEY = 'heartbeatsAwayData';
+const USER_ROLE_LOCAL_STORAGE_KEY = 'notreCoconUserRole';
+const FIRESTORE_SETTINGS_DOC_ID = 'appSettings';
+const FIRESTORE_LOGS_COLLECTION_ID = 'dailyLogs';
+const FIRESTORE_CONFIG_COLLECTION_ID = 'config';
+
 
 interface AppState extends AppData {
   isInitialized: boolean;
-  userRole: 'editor' | 'partner'; // Made userRole non-optional in state
+  userRole: 'editor' | 'partner';
 }
 
 type Action =
-  | { type: 'INITIALIZE'; payload: Partial<AppState> }
+  | { type: 'INITIALIZE_APP'; payload: { settings: Partial<AppSettings>; logs: Record<string, DailyLog>; userRole: 'editor' | 'partner' } }
   | { type: 'SET_INTERNSHIP_DATES'; payload: { startDate: Date; endDate: Date } }
   | { type: 'UPSERT_LOG'; payload: { date: string; log: DailyLog } }
-  | { type: 'RESET_DATA' }
-  | { type: 'SET_USER_ROLE'; payload: 'editor' | 'partner' }; // Added SET_USER_ROLE action
+  | { type: 'RESET_DATA_STATE' } 
+  | { type: 'SET_USER_ROLE'; payload: 'editor' | 'partner' };
 
 const initialState: AppState = {
   internshipStart: null,
   internshipEnd: null,
   logs: {},
   isInitialized: false,
-  userRole: 'editor', // Default role
+  userRole: 'editor',
 };
 
 const AppContext = createContext<
   (AppState & {
-    setInternshipDates: (startDate: Date, endDate: Date) => void;
-    upsertLog: (date: Date, log: DailyLog) => void;
+    setInternshipDates: (startDate: Date, endDate: Date) => Promise<void>;
+    upsertLog: (date: Date, log: DailyLog) => Promise<void>;
     getLog: (date: Date) => DailyLog | undefined;
     isConfigured: () => boolean;
-    resetData: () => void;
-    setUserRole: (role: 'editor' | 'partner') => void; // Added setUserRole
+    resetData: () => Promise<void>;
+    setUserRole: (role: 'editor' | 'partner') => void;
   }) | undefined
 >(undefined);
 
 function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
-    case 'INITIALIZE':
-      return { ...state, ...action.payload, userRole: action.payload.userRole || 'editor', isInitialized: true };
+    case 'INITIALIZE_APP':
+      return {
+        ...state,
+        internshipStart: action.payload.settings.internshipStart || null,
+        internshipEnd: action.payload.settings.internshipEnd || null,
+        logs: action.payload.logs,
+        userRole: action.payload.userRole,
+        isInitialized: true,
+      };
     case 'SET_INTERNSHIP_DATES':
       return {
         ...state,
@@ -56,10 +70,9 @@ function appReducer(state: AppState, action: Action): AppState {
           [action.payload.date]: action.payload.log,
         },
       };
-    case 'RESET_DATA':
-      localStorage.removeItem(LOCAL_STORAGE_KEY);
-      return { ...initialState, isInitialized: true, userRole: 'editor' }; // Ensure userRole resets to editor
-    case 'SET_USER_ROLE': // Handle SET_USER_ROLE
+    case 'RESET_DATA_STATE':
+      return { ...initialState, isInitialized: true, userRole: 'editor' }; // keep userRole from localStorage if possible
+    case 'SET_USER_ROLE':
       return { ...state, userRole: action.payload };
     default:
       return state;
@@ -70,42 +83,70 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(appReducer, initialState);
 
   useEffect(() => {
-    try {
-      const storedData = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (storedData) {
-        const parsedData = JSON.parse(storedData) as Partial<AppData>;
-        dispatch({ type: 'INITIALIZE', payload: { ...parsedData, userRole: parsedData.userRole || 'editor' } });
-      } else {
-        dispatch({ type: 'INITIALIZE', payload: { userRole: 'editor' } });
-      }
-    } catch (error) {
-      console.error("Failed to load data from localStorage", error);
-      dispatch({ type: 'INITIALIZE', payload: { userRole: 'editor' } });
-    }
-  }, []);
+    const loadData = async () => {
+      try {
+        // Load settings
+        const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
+        const settingsDocSnap = await getDoc(settingsDocRef);
+        const appSettings: Partial<AppSettings> = settingsDocSnap.exists() ? (settingsDocSnap.data() as AppSettings) : {};
 
+        // Load logs
+        const logsCollectionRef = collection(db, FIRESTORE_LOGS_COLLECTION_ID);
+        const logsSnapshot = await getDocs(logsCollectionRef);
+        const fetchedLogs: Record<string, DailyLog> = {};
+        logsSnapshot.forEach((logDoc) => {
+          fetchedLogs[logDoc.id] = logDoc.data() as DailyLog;
+        });
+
+        // Load user role from localStorage
+        const storedUserRole = localStorage.getItem(USER_ROLE_LOCAL_STORAGE_KEY) as 'editor' | 'partner' | null;
+        
+        dispatch({ type: 'INITIALIZE_APP', payload: { settings: appSettings, logs: fetchedLogs, userRole: storedUserRole || 'editor' } });
+      } catch (error) {
+        console.error("Failed to load data from Firestore or localStorage", error);
+        // Initialize with defaults if Firestore fails
+        const storedUserRole = localStorage.getItem(USER_ROLE_LOCAL_STORAGE_KEY) as 'editor' | 'partner' | null;
+        dispatch({ type: 'INITIALIZE_APP', payload: { settings: {}, logs: {}, userRole: storedUserRole || 'editor' } });
+      }
+    };
+    loadData();
+  }, []);
+  
   useEffect(() => {
+    // Persist userRole to localStorage whenever it changes in state
     if (state.isInitialized) {
       try {
-        const dataToStore = {
-          internshipStart: state.internshipStart,
-          internshipEnd: state.internshipEnd,
-          logs: state.logs,
-          userRole: state.userRole, // Persist userRole
-        };
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(dataToStore));
+        localStorage.setItem(USER_ROLE_LOCAL_STORAGE_KEY, state.userRole);
       } catch (error) {
-        console.error("Failed to save data to localStorage", error);
+        console.error("Failed to save userRole to localStorage", error);
       }
     }
-  }, [state]);
+  }, [state.userRole, state.isInitialized]);
 
-  const setInternshipDates = useCallback((startDate: Date, endDate: Date) => {
-    dispatch({ type: 'SET_INTERNSHIP_DATES', payload: { startDate, endDate } });
+
+  const setInternshipDates = useCallback(async (startDate: Date, endDate: Date) => {
+    const formattedStartDate = format(startDate, 'yyyy-MM-dd');
+    const formattedEndDate = format(endDate, 'yyyy-MM-dd');
+    try {
+      const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
+      await setDoc(settingsDocRef, { internshipStart: formattedStartDate, internshipEnd: formattedEndDate }, { merge: true });
+      dispatch({ type: 'SET_INTERNSHIP_DATES', payload: { startDate, endDate } });
+    } catch (error) {
+      console.error("Failed to save internship dates to Firestore:", error);
+      // Optionally, show a toast to the user
+    }
   }, []);
 
-  const upsertLog = useCallback((date: Date, log: DailyLog) => {
-    dispatch({ type: 'UPSERT_LOG', payload: { date: format(date, 'yyyy-MM-dd'), log } });
+  const upsertLog = useCallback(async (date: Date, log: DailyLog) => {
+    const formattedDate = format(date, 'yyyy-MM-dd');
+    try {
+      const logDocRef = doc(db, FIRESTORE_LOGS_COLLECTION_ID, formattedDate);
+      await setDoc(logDocRef, log); // Overwrites or creates the document
+      dispatch({ type: 'UPSERT_LOG', payload: { date: formattedDate, log } });
+    } catch (error) {
+      console.error("Failed to save log to Firestore:", error);
+      // Optionally, show a toast to the user
+    }
   }, []);
 
   const getLog = useCallback((date: Date): DailyLog | undefined => {
@@ -117,12 +158,34 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
            isValid(parseISO(state.internshipStart)) && isValid(parseISO(state.internshipEnd));
   }, [state.internshipStart, state.internshipEnd]);
   
-  const resetData = useCallback(() => {
-    dispatch({ type: 'RESET_DATA' });
+  const resetData = useCallback(async () => {
+    try {
+      // Delete settings document
+      const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
+      await deleteDoc(settingsDocRef);
+
+      // Delete all logs in dailyLogs collection
+      const logsCollectionRef = collection(db, FIRESTORE_LOGS_COLLECTION_ID);
+      const logsSnapshot = await getDocs(logsCollectionRef);
+      const batch = writeBatch(db);
+      logsSnapshot.docs.forEach((logDoc) => {
+        batch.delete(logDoc.ref);
+      });
+      await batch.commit();
+      
+      // Clear user role from localStorage
+      localStorage.removeItem(USER_ROLE_LOCAL_STORAGE_KEY);
+
+      dispatch({ type: 'RESET_DATA_STATE' });
+    } catch (error) {
+      console.error("Failed to reset data in Firestore:", error);
+      // Optionally, show a toast to the user
+    }
   }, []);
 
-  const setUserRole = useCallback((role: 'editor' | 'partner') => { // Define setUserRole
+  const setUserRole = useCallback((role: 'editor' | 'partner') => {
     dispatch({ type: 'SET_USER_ROLE', payload: role });
+    // User role is saved to localStorage by the useEffect hook listening to state.userRole
   }, []);
 
   return (
