@@ -5,32 +5,44 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { AppContainer } from '@/components/AppContainer';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Edit3, Eye, Gift } from 'lucide-react';
+import { Edit3, Eye, Gift, LogOut } from 'lucide-react';
 import { useAppContext } from '@/context/AppContext';
-import { useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 export default function HomePage() {
-  const { userRole, setUserRole } = useAppContext();
-  const searchParams = useSearchParams();
+  const { userRole, isInitialized, setUserRole } = useAppContext();
+  const router = useRouter();
 
   useEffect(() => {
-    const mode = searchParams.get('mode');
-    if (mode === 'masti') { // Changed 'partner' to 'masti'
-      setUserRole('partner');
-    } else if (mode === 'editor') {
-      setUserRole('editor');
+    if (isInitialized && !userRole) {
+      router.replace('/safe-space');
     }
-  }, [searchParams, setUserRole]);
+  }, [isInitialized, userRole, router]);
+
+  if (!isInitialized || !userRole) {
+    // Show a loading state or minimal content while redirecting or initializing
+    return (
+      <AppContainer>
+        <div className="flex justify-center items-center h-64">
+          <p className="text-xl text-muted-foreground">Loading your space...</p>
+        </div>
+      </AppContainer>
+    );
+  }
 
   const isPartner = userRole === 'partner';
+
+  const handleLogout = () => {
+    setUserRole(null); // This will also clear localStorage and trigger redirect via useEffect
+  };
 
   return (
     <AppContainer>
       <div className="flex flex-col items-center text-center space-y-12">
         <Card className="w-full max-w-md shadow-lg">
           <CardHeader>
-            <CardTitle className="font-headline text-4xl text-accent">Welcome!</CardTitle>
+            <CardTitle className="font-headline text-4xl text-accent">Welcome Back!</CardTitle>
             <CardDescription className="text-muted-foreground text-lg">
               This little corner of the web is just for us.
             </CardDescription>
@@ -68,6 +80,9 @@ export default function HomePage() {
                   </Link>
                 </Button>
               )}
+              <Button variant="ghost" onClick={handleLogout} size="lg" className="w-full sm:w-auto text-muted-foreground hover:text-destructive">
+                <LogOut className="w-5 h-5" /> Leave Our Space
+              </Button>
           </CardContent>
         </Card>
       </div>

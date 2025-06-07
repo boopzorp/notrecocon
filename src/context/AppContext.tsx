@@ -16,22 +16,26 @@ const FIRESTORE_CONFIG_COLLECTION_ID = 'config';
 
 interface AppState extends AppData {
   isInitialized: boolean;
-  userRole: 'editor' | 'partner';
+  userRole: 'editor' | 'partner' | null; // Allow null for initial state before login
+  editorCode: string | null;
+  partnerCode: string | null;
 }
 
 type Action =
-  | { type: 'INITIALIZE_APP'; payload: { settings: Partial<AppSettings>; logs: Record<string, DailyLog>; userRole: 'editor' | 'partner' } }
+  | { type: 'INITIALIZE_APP'; payload: { settings: Partial<AppSettings>; logs: Record<string, DailyLog>; userRole: 'editor' | 'partner' | null } }
   | { type: 'SET_INTERNSHIP_DATES'; payload: { startDate: Date; endDate: Date } }
   | { type: 'UPSERT_LOG'; payload: { date: string; log: DailyLog } }
   | { type: 'RESET_DATA_STATE' }
-  | { type: 'SET_USER_ROLE'; payload: 'editor' | 'partner' };
+  | { type: 'SET_USER_ROLE'; payload: 'editor' | 'partner' | null };
 
 const initialState: AppState = {
   internshipStart: null,
   internshipEnd: null,
   logs: {},
   isInitialized: false,
-  userRole: 'editor',
+  userRole: null, // Initially null
+  editorCode: null,
+  partnerCode: null,
 };
 
 const AppContext = createContext<
@@ -41,7 +45,8 @@ const AppContext = createContext<
     getLog: (date: Date) => DailyLog | undefined;
     isConfigured: () => boolean;
     resetData: () => Promise<void>;
-    setUserRole: (role: 'editor' | 'partner') => void;
+    setUserRole: (role: 'editor' | 'partner' | null) => void;
+    attemptLoginWithCode: (code: string) => boolean;
   }) | undefined
 >(undefined);
 
@@ -52,8 +57,10 @@ function appReducer(state: AppState, action: Action): AppState {
         ...state,
         internshipStart: action.payload.settings.internshipStart || null,
         internshipEnd: action.payload.settings.internshipEnd || null,
+        editorCode: action.payload.settings.editorCode || null,
+        partnerCode: action.payload.settings.partnerCode || null,
         logs: action.payload.logs,
-        userRole: action.payload.userRole,
+        userRole: action.payload.userRole, // Persisted role or null
         isInitialized: true,
       };
     case 'SET_INTERNSHIP_DATES':
@@ -71,8 +78,14 @@ function appReducer(state: AppState, action: Action): AppState {
         },
       };
     case 'RESET_DATA_STATE':
-      const currentRole = state.isInitialized ? state.userRole : (localStorage.getItem(USER_ROLE_LOCAL_STORAGE_KEY) as 'editor' | 'partner' || 'editor');
-      return { ...initialState, isInitialized: true, userRole: currentRole };
+      // Keep codes if they were loaded, but reset role
+      return { 
+        ...initialState, 
+        isInitialized: true, 
+        userRole: null, // Reset role, codes will be re-fetched or remain if already in state from init
+        editorCode: state.editorCode, // Preserve loaded codes
+        partnerCode: state.partnerCode,
+      };
     case 'SET_USER_ROLE':
       return { ...state, userRole: action.payload };
     default:
@@ -99,25 +112,31 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
         const storedUserRole = localStorage.getItem(USER_ROLE_LOCAL_STORAGE_KEY) as 'editor' | 'partner' | null;
         
-        dispatch({ type: 'INITIALIZE_APP', payload: { settings: appSettings, logs: fetchedLogs, userRole: storedUserRole || 'editor' } });
+        dispatch({ 
+          type: 'INITIALIZE_APP', 
+          payload: { 
+            settings: appSettings, 
+            logs: fetchedLogs, 
+            userRole: storedUserRole 
+          } 
+        });
       } catch (error) {
         console.error("Failed to load data from Firestore or localStorage", error);
         const storedUserRole = localStorage.getItem(USER_ROLE_LOCAL_STORAGE_KEY) as 'editor' | 'partner' | null;
-        dispatch({ type: 'INITIALIZE_APP', payload: { settings: {}, logs: {}, userRole: storedUserRole || 'editor' } });
+        dispatch({ type: 'INITIALIZE_APP', payload: { settings: {}, logs: {}, userRole: storedUserRole } });
       }
     };
     loadData();
   }, []);
   
-  useEffect(() => {
-    if (state.isInitialized) {
-      try {
-        localStorage.setItem(USER_ROLE_LOCAL_STORAGE_KEY, state.userRole);
-      } catch (error) {
-        console.error("Failed to save userRole to localStorage", error);
-      }
+  const setUserRole = useCallback((role: 'editor' | 'partner' | null) => {
+    if (role) {
+      localStorage.setItem(USER_ROLE_LOCAL_STORAGE_KEY, role);
+    } else {
+      localStorage.removeItem(USER_ROLE_LOCAL_STORAGE_KEY);
     }
-  }, [state.userRole, state.isInitialized]);
+    dispatch({ type: 'SET_USER_ROLE', payload: role });
+  }, []);
 
 
   const setInternshipDates = useCallback(async (startDate: Date, endDate: Date) => {
@@ -140,7 +159,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         editorNotes: logData.editorNotes || [],
         spotifyLink: typeof logData.spotifyLink === 'string' ? logData.spotifyLink : "",
         songTitle: typeof logData.songTitle === 'string' ? logData.songTitle : "",
-        // songArtist: typeof logData.songArtist === 'string' ? logData.songArtist : "", // Removed
         partnerNotes: logData.partnerNotes || [],
       };
       await setDoc(logDocRef, dataToSave);
@@ -161,9 +179,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   
   const resetData = useCallback(async () => {
     try {
-      const settingsDocRef = doc(db, FIRESTORE_CONFIG_COLLECTION_ID, FIRESTORE_SETTINGS_DOC_ID);
-      await deleteDoc(settingsDocRef);
-
+      // Keep appSettings (including codes) but clear logs
       const logsCollectionRef = collection(db, FIRESTORE_LOGS_COLLECTION_ID);
       const logsSnapshot = await getDocs(logsCollectionRef);
       const batch = writeBatch(db);
@@ -172,20 +188,39 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       });
       await batch.commit();
       
-      localStorage.removeItem(USER_ROLE_LOCAL_STORAGE_KEY);
-
-      dispatch({ type: 'RESET_DATA_STATE' });
+      // Do not remove user role from local storage here, as they might still be "logged in"
+      // Let the /safe-space page handle role if it becomes null
+      dispatch({ type: 'RESET_DATA_STATE' }); // This will clear logs in state
     } catch (error) {
-      console.error("Failed to reset data in Firestore:", error);
+      console.error("Failed to reset log data in Firestore:", error);
     }
   }, []);
 
-  const setUserRole = useCallback((role: 'editor' | 'partner') => {
-    dispatch({ type: 'SET_USER_ROLE', payload: role });
-  }, []);
+  const attemptLoginWithCode = useCallback((enteredCode: string): boolean => {
+    if (!state.isInitialized) {
+      console.warn("Attempted login before app context initialized.");
+      return false;
+    }
+    if (!state.editorCode && !state.partnerCode) {
+      console.warn("Editor/Partner codes not configured in Firestore settings.");
+      // Potentially show a message to the user here, or on the safe-space page
+      return false;
+    }
+
+    if (state.editorCode && enteredCode === state.editorCode) {
+      setUserRole('editor');
+      return true;
+    }
+    if (state.partnerCode && enteredCode === state.partnerCode) {
+      setUserRole('partner');
+      return true;
+    }
+    return false;
+  }, [state.isInitialized, state.editorCode, state.partnerCode, setUserRole]);
+
 
   return (
-    <AppContext.Provider value={{ ...state, setInternshipDates, upsertLog, getLog, isConfigured, resetData, setUserRole }}>
+    <AppContext.Provider value={{ ...state, setInternshipDates, upsertLog, getLog, isConfigured, resetData, setUserRole, attemptLoginWithCode }}>
       {children}
     </AppContext.Provider>
   );

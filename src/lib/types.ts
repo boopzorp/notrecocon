@@ -3,7 +3,6 @@ export interface DailyLog {
   editorNotes?: string[];
   spotifyLink: string;
   songTitle?: string;
-  // songArtist?: string; // Removed as per user request
   partnerNotes?: string[];
 }
 
@@ -11,6 +10,8 @@ export interface AppSettings {
   internshipStart: string | null; // ISO string
   internshipEnd: string | null; // ISO string
   userRole?: 'editor' | 'partner';
+  editorCode?: string;
+  partnerCode?: string;
 }
 
 export interface AppData extends AppSettings {
