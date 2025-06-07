@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { AppContainer } from '@/components/AppContainer';
-import { KeyRound, ShieldAlert } from 'lucide-react';
+import { ShieldAlert } from 'lucide-react'; // KeyRound removed
 import { useToast } from '@/hooks/use-toast';
 
 export default function SafeSpacePage() {
@@ -41,7 +41,7 @@ export default function SafeSpacePage() {
         title: "Welcome!",
         description: "You've successfully entered Our Safe Space.",
       });
-      router.push('/events'); // Navigate to the new Events page
+      router.push('/events'); 
     } else {
       setError("That code doesn't seem right. Please try again.");
       toast({
@@ -71,8 +71,8 @@ export default function SafeSpacePage() {
         <Card className="w-full max-w-md shadow-lg">
           <form onSubmit={handleSubmit}>
             <CardHeader className="text-center">
-              <KeyRound className="w-12 h-12 mx-auto text-primary" />
-              <CardTitle className="font-headline text-4xl text-accent">Our Safe Space</CardTitle>
+              {/* KeyRound icon removed from here */}
+              <CardTitle className="font-headline text-4xl text-accent pt-4">Our Safe Space</CardTitle>
               <CardDescription className="text-muted-foreground text-lg">
                 Enter your secret code to continue our journey.
               </CardDescription>
@@ -114,5 +114,3 @@ export default function SafeSpacePage() {
     </AppContainer>
   );
 }
-
-    
