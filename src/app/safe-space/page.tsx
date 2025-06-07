@@ -20,7 +20,6 @@ export default function SafeSpacePage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Correctly access codes from globalConfig
   const editorCode = globalConfig?.editorCode;
   const partnerCode = globalConfig?.partnerCode;
 
@@ -42,8 +41,7 @@ export default function SafeSpacePage() {
         title: "Welcome!",
         description: "You've successfully entered Our Safe Space.",
       });
-      // On successful login, we should now navigate to the /events page
-      router.push('/events');
+      router.push('/events'); // Navigate to the new Events page
     } else {
       setError("That code doesn't seem right. Please try again.");
       toast({
@@ -65,7 +63,6 @@ export default function SafeSpacePage() {
     );
   }
   
-  // Check if globalConfig itself is loaded, then check codes
   const codesNotConfigured = isInitialized && (!globalConfig || (!editorCode && !partnerCode));
 
   return (
@@ -117,3 +114,5 @@ export default function SafeSpacePage() {
     </AppContainer>
   );
 }
+
+    
