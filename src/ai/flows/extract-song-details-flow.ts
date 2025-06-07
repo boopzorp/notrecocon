@@ -33,15 +33,27 @@ const extractSongDetailsFlow = ai.defineFlow(
     outputSchema: ExtractSongDetailsOutputSchema,
   },
   async (input) => {
-    const oEmbedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(input.spotifyUrl)}`;
     let responseDataText = ''; // To store response text for logging
+    let cleanedSpotifyUrl = input.spotifyUrl;
+
+    try {
+      // Attempt to parse the URL and remove query parameters
+      const parsedUrl = new URL(input.spotifyUrl);
+      cleanedSpotifyUrl = `${parsedUrl.protocol}//${parsedUrl.hostname}${parsedUrl.pathname}`;
+    } catch (urlParseError) {
+      // If URL parsing fails, log it but proceed with the original URL
+      // This might happen if the URL is already malformed, though Zod validation should catch most.
+      console.warn(`Could not parse and clean Spotify URL: ${input.spotifyUrl}. Error: ${urlParseError}. Proceeding with original URL.`);
+    }
+    
+    const oEmbedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(cleanedSpotifyUrl)}`;
 
     try {
       const response = await fetch(oEmbedUrl);
       responseDataText = await response.text(); // Get text for logging regardless of status
 
       if (!response.ok) {
-        console.error(`Spotify oEmbed request failed with status ${response.status}. URL: ${oEmbedUrl}. Response: ${responseDataText}`);
+        console.error(`Spotify oEmbed request failed with status ${response.status}. URL: ${oEmbedUrl}. Original Input URL: ${input.spotifyUrl}. Cleaned URL: ${cleanedSpotifyUrl}. Response: ${responseDataText}`);
         throw new Error(`Failed to fetch song details from Spotify. Status: ${response.status}`);
       }
 
@@ -51,13 +63,13 @@ const extractSongDetailsFlow = ai.defineFlow(
       const songArtist = data.author_name; // Spotify oEmbed uses author_name for artist
 
       if (!songTitle || !songArtist) {
-        console.error('Spotify oEmbed response missing title or author_name. URL:', input.spotifyUrl, 'Raw Response:', responseDataText, 'Parsed Data:', JSON.stringify(data, null, 2));
+        console.error('Spotify oEmbed response missing title or author_name. Original Input URL:', input.spotifyUrl, 'Cleaned URL for oEmbed:', cleanedSpotifyUrl, 'Raw Response:', responseDataText, 'Parsed Data:', JSON.stringify(data, null, 2));
         throw new Error('Could not extract title or artist from Spotify response. Please ensure the link is a valid Spotify track URL.');
       }
 
       return { songTitle, songArtist };
     } catch (error: any) {
-      console.error('Error in extractSongDetailsFlow. URL:', input.spotifyUrl, 'oEmbed URL:', oEmbedUrl, 'Raw Response Text (if available):', responseDataText, 'Error:', error);
+      console.error('Error in extractSongDetailsFlow. Original Input URL:', input.spotifyUrl, 'Cleaned URL for oEmbed:', cleanedSpotifyUrl, 'oEmbed URL:', oEmbedUrl, 'Raw Response Text (if available):', responseDataText, 'Error:', error);
       // Re-throw a generic message or the specific one from above.
       if (error.message.startsWith('Could not extract') || error.message.startsWith('Failed to fetch')) {
         throw error;
@@ -66,4 +78,3 @@ const extractSongDetailsFlow = ai.defineFlow(
     }
   }
 );
-
