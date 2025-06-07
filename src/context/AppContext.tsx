@@ -3,7 +3,7 @@
 
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useEffect, useReducer, useCallback } from 'react';
-import type { AppData, DailyLog, AppSettings, MoodEntry } from '@/lib/types';
+import type { AppData, DailyLog, AppSettings, SongEntry } from '@/lib/types';
 import { format, isValid, parseISO } from 'date-fns';
 import { db, app as firebaseApp } from '@/lib/firebase';
 import { doc, getDoc, setDoc, collection, getDocs, writeBatch, deleteDoc } from 'firebase/firestore';
@@ -100,7 +100,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        // console.log(`[AppContext] Using Firebase Project ID: ${firebaseApp.options.projectId}`); // Removed as per previous step
         const settingsDocPath = `${FIRESTORE_CONFIG_COLLECTION_ID}/${FIRESTORE_SETTINGS_DOC_ID}`;
         console.log(`[AppContext] Attempting to load settings from Firestore path: ${settingsDocPath}`);
 
@@ -111,10 +110,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         if (settingsDocSnap.exists()) {
           appSettings = settingsDocSnap.data() as AppSettings;
           console.log("[AppContext] Loaded appSettings from Firestore:", appSettings);
-          console.log("[AppContext] settingsDocSnap.exists():", settingsDocSnap.exists());
         } else {
           console.warn(`[AppContext] appSettings document does not exist at path: ${settingsDocPath}. Ensure it's created with editorCode and partnerCode.`);
-          console.log("[AppContext] settingsDocSnap.exists():", settingsDocSnap.exists());
         }
 
         const logsCollectionRef = collection(db, FIRESTORE_LOGS_COLLECTION_ID);
@@ -173,23 +170,43 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     try {
       const logDocRef = doc(db, FIRESTORE_LOGS_COLLECTION_ID, formattedDate);
 
+      // Construct the data to save, ensuring undefined song entries become null or are omitted
+      const editorSong: SongEntry | undefined = (logData.songs?.editor?.link)
+        ? { link: logData.songs.editor.link, title: logData.songs.editor.title || "" }
+        : undefined;
+      const partnerSong: SongEntry | undefined = (logData.songs?.partner?.link)
+        ? { link: logData.songs.partner.link, title: logData.songs.partner.title || "" }
+        : undefined;
+
       const dataToSave: DailyLog = {
         editorNotes: logData.editorNotes || [],
-        spotifyLink: typeof logData.spotifyLink === 'string' ? logData.spotifyLink : "",
-        songTitle: typeof logData.songTitle === 'string' ? logData.songTitle : "",
         partnerNotes: logData.partnerNotes || [],
-        promptForPartner: typeof logData.promptForPartner === 'string' ? logData.promptForPartner : "",
-        promptForEditor: typeof logData.promptForEditor === 'string' ? logData.promptForEditor : "",
+        promptForPartner: logData.promptForPartner || "",
+        promptForEditor: logData.promptForEditor || "",
         moods: {
-            editor: logData.moods?.editor || null, // Changed from undefined to null
-            partner: logData.moods?.partner || null, // Changed from undefined to null
-        }
+          editor: logData.moods?.editor || null,
+          partner: logData.moods?.partner || null,
+        },
+        // Only include the songs object if at least one song is defined
+        ...( (editorSong || partnerSong) && {
+            songs: {
+              ...(editorSong && { editor: editorSong }),
+              ...(partnerSong && { partner: partnerSong }),
+            }
+          }
+        )
       };
+      
+      // If songs object exists but both editor and partner songs are undefined (e.g. after clearing)
+      // ensure the songs field itself is removed if it ends up empty.
+      // The spread syntax above already handles not creating 'songs' if both are undefined.
+      // If songs object was created but one of them became undefined, it will be { editor: undefined } or { partner: undefined}
+      // Firestore handles 'undefined' in objects by removing the field, which is fine.
 
       await setDoc(logDocRef, dataToSave, { merge: true });
       dispatch({ type: 'UPSERT_LOG', payload: { date: formattedDate, log: dataToSave } });
-    } catch (error) {
-      console.error("Failed to save log to Firestore:", error);
+    } catch (error: any) {
+      console.error("Failed to save log to Firestore:", error.message, error.stack);
     }
   }, []);
 
@@ -217,7 +234,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       await batch.commit();
 
       dispatch({ type: 'RESET_DATA_STATE' });
-    } catch (error) {
+    } catch (error) {      
       console.error("Failed to reset log data in Firestore:", error);
     }
   }, []);
@@ -259,4 +276,3 @@ export const useAppContext = () => {
   }
   return context;
 };
-

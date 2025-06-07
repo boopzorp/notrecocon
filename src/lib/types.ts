@@ -1,16 +1,24 @@
 
 export interface MoodEntry {
-  editor?: string; // emoji character
-  partner?: string; // emoji character
+  editor?: string | null; // emoji character, allow null
+  partner?: string | null; // emoji character, allow null
+}
+
+// NEW: Song entry structure
+export interface SongEntry {
+  link: string;
+  title?: string;
 }
 
 export interface DailyLog {
   editorNotes?: string[];
-  spotifyLink: string;
-  songTitle?: string;
+  songs?: { // Optional top-level songs object
+    editor?: SongEntry | null; // Optional editor song, allow null
+    partner?: SongEntry | null; // Optional partner song, allow null
+  };
   partnerNotes?: string[];
-  promptForPartner?: string; // Prompt from editor to partner
-  promptForEditor?: string;   // Prompt from partner to editor
+  promptForPartner?: string;
+  promptForEditor?: string;
   moods?: MoodEntry;
 }
 

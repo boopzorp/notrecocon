@@ -71,7 +71,7 @@ export default function EditorPage() {
   }, [internshipStart, internshipEnd, selectedDate]);
 
 
-  if (!isInitialized || !userRole) { // Added !userRole check here too for loading state
+  if (!isInitialized || !userRole) { 
     return (
       <AppContainer showHomeButton={true}>
         <div className="flex justify-center items-center h-64">
@@ -81,8 +81,6 @@ export default function EditorPage() {
     );
   }
   
-  // isConfigured check for UI message is still relevant if userRole IS set but dates are not.
-  // The useEffect above handles the redirect if !isConfigured().
   if (!isConfigured()) {
      return (
       <AppContainer showHomeButton={true}>
@@ -114,7 +112,16 @@ export default function EditorPage() {
   };
 
   const handleDeleteLog = (date: Date) => {
-    upsertLog(date, { editorNotes: [], spotifyLink: "", songTitle: "", partnerNotes: [] }); // Clear all parts of the log
+    // Construct a log entry that signals clearing of all fields
+    const clearedLog: DailyLog = { 
+      editorNotes: [], 
+      songs: { editor: undefined, partner: undefined }, // Signal to clear songs
+      partnerNotes: [], 
+      promptForPartner: "", 
+      promptForEditor: "",
+      moods: { editor: null, partner: null } // Signal to clear moods to null
+    };
+    upsertLog(date, clearedLog); 
     toast({
       title: "Log Deleted!",
       description: `Your entry for ${format(date, "MMMM do, yyyy")} has been cleared.`,

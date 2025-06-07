@@ -8,13 +8,15 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import type { DailyLog, MoodEntry } from "@/lib/types";
-import { Music2, Save, BookOpen, Lightbulb, Trash2, PenLine, Gift, MessageSquarePlus, MessagesSquare, PlusCircle, Search, Loader2, MessageCircleQuestion, MessageCircleHeart, Smile } from 'lucide-react';
+import type { DailyLog, MoodEntry, SongEntry } from "@/lib/types";
+import { Music2, Save, BookOpen, Lightbulb, Trash2, PenLine, Gift, MessageSquarePlus, MessagesSquare, PlusCircle, Search, Loader2, MessageCircleQuestion, MessageCircleHeart, Smile, ChevronDown } from 'lucide-react';
 import { generateSuggestedReplies, type SuggestedRepliesOutput } from '@/ai/flows/suggested-replies';
 import { extractSongDetails, type ExtractSongDetailsOutput } from '@/ai/flows/extract-song-details-flow';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+
 
 interface DailyDetailsCardProps {
   selectedDate: Date;
@@ -30,84 +32,94 @@ type MoodEmoji = typeof MOOD_OPTIONS[number];
 
 export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: DailyDetailsCardProps) {
   const [newEditorNoteText, setNewEditorNoteText] = useState('');
-  const [spotifyLink, setSpotifyLink] = useState('');
-  const [songTitle, setSongTitle] = useState('');
   const [newPartnerNoteText, setNewPartnerNoteText] = useState('');
   const [promptForPartner, setPromptForPartner] = useState('');
   const [promptForEditor, setPromptForEditor] = useState('');
-  const [currentEditorMood, setCurrentEditorMood] = useState<MoodEmoji | undefined>(undefined);
-  const [currentPartnerMood, setCurrentPartnerMood] = useState<MoodEmoji | undefined>(undefined);
+  const [currentEditorMood, setCurrentEditorMood] = useState<MoodEmoji | null>(null);
+  const [currentPartnerMood, setCurrentPartnerMood] = useState<MoodEmoji | null>(null);
 
+  // Editor's song state
+  const [editorSpotifyLink, setEditorSpotifyLink] = useState('');
+  const [editorSongTitle, setEditorSongTitle] = useState('');
+  const [isFetchingEditorSongDetails, setIsFetchingEditorSongDetails] = useState(false);
+  const [editorSongDetailsError, setEditorSongDetailsError] = useState<string | null>(null);
+
+  // Partner's song state
+  const [partnerSpotifyLink, setPartnerSpotifyLink] = useState('');
+  const [partnerSongTitle, setPartnerSongTitle] = useState('');
+  const [isFetchingPartnerSongDetails, setIsFetchingPartnerSongDetails] = useState(false);
+  const [partnerSongDetailsError, setPartnerSongDetailsError] = useState<string | null>(null);
 
   const [suggestedReplies, setSuggestedReplies] = useState<string[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [errorSuggestions, setErrorSuggestions] = useState<string | null>(null);
 
-  const [isFetchingSongDetails, setIsFetchingSongDetails] = useState(false);
-  const [songDetailsError, setSongDetailsError] = useState<string | null>(null);
-
   const { toast } = useToast();
 
   useEffect(() => {
     setNewEditorNoteText('');
-    setSpotifyLink(log?.spotifyLink || '');
-    setSongTitle(log?.songTitle || '');
     setNewPartnerNoteText('');
     setPromptForPartner(log?.promptForPartner || '');
     setPromptForEditor(log?.promptForEditor || '');
-    setCurrentEditorMood(log?.moods?.editor as MoodEmoji || undefined);
-    setCurrentPartnerMood(log?.moods?.partner as MoodEmoji || undefined);
+    setCurrentEditorMood((log?.moods?.editor as MoodEmoji) || null);
+    setCurrentPartnerMood((log?.moods?.partner as MoodEmoji) || null);
+    
+    setEditorSpotifyLink(log?.songs?.editor?.link || '');
+    setEditorSongTitle(log?.songs?.editor?.title || '');
+    setPartnerSpotifyLink(log?.songs?.partner?.link || '');
+    setPartnerSongTitle(log?.songs?.partner?.title || '');
+
     setSuggestedReplies([]);
     setErrorSuggestions(null);
-    setSongDetailsError(null);
-    setIsFetchingSongDetails(false);
+    setEditorSongDetailsError(null);
+    setIsFetchingEditorSongDetails(false);
+    setPartnerSongDetailsError(null);
+    setIsFetchingPartnerSongDetails(false);
   }, [log, selectedDate]);
 
 
   const handleEditorSave = async (e: FormEvent) => {
     e.preventDefault();
-
-    const currentLogSnapshot: DailyLog = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] };
-
+    const currentLogSnapshot: DailyLog = log || { editorNotes: [], partnerNotes: [], songs: {}, moods: {} };
     const updatedLog: DailyLog = {
       ...currentLogSnapshot,
       editorNotes: newEditorNoteText.trim()
         ? [...(currentLogSnapshot.editorNotes || []), newEditorNoteText]
         : (currentLogSnapshot.editorNotes || []),
-      spotifyLink: spotifyLink.trim(),
-      songTitle: songTitle.trim(),
       promptForPartner: promptForPartner.trim(),
-      partnerNotes: currentLogSnapshot.partnerNotes || [],
-      promptForEditor: currentLogSnapshot.promptForEditor || '',
       moods: {
+        ...(currentLogSnapshot.moods),
         editor: currentEditorMood,
-        partner: currentLogSnapshot.moods?.partner,
-      }
+      },
+      songs: {
+        ...(currentLogSnapshot.songs),
+        editor: editorSpotifyLink.trim() 
+          ? { link: editorSpotifyLink.trim(), title: editorSongTitle.trim() } 
+          : undefined,
+      },
     };
-
     onSave(selectedDate, updatedLog);
     setNewEditorNoteText('');
   };
 
   const handlePartnerSave = async (e: FormEvent) => {
     e.preventDefault();
-
-    const currentLogSnapshot: DailyLog = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] };
-
+    const currentLogSnapshot: DailyLog = log || { editorNotes: [], partnerNotes: [], songs: {}, moods: {} };
     const updatedLog: DailyLog = {
       ...currentLogSnapshot,
       partnerNotes: newPartnerNoteText.trim() ? [...(currentLogSnapshot.partnerNotes || []), newPartnerNoteText] : (currentLogSnapshot.partnerNotes || []),
       promptForEditor: promptForEditor.trim(),
-      editorNotes: currentLogSnapshot.editorNotes || [],
-      spotifyLink: currentLogSnapshot.spotifyLink || '',
-      songTitle: currentLogSnapshot.songTitle || '',
-      promptForPartner: currentLogSnapshot.promptForPartner || '',
       moods: {
-        editor: currentLogSnapshot.moods?.editor,
+        ...(currentLogSnapshot.moods),
         partner: currentPartnerMood,
+      },
+      songs: {
+        ...(currentLogSnapshot.songs),
+        partner: partnerSpotifyLink.trim() 
+          ? { link: partnerSpotifyLink.trim(), title: partnerSongTitle.trim() } 
+          : undefined,
       }
     };
-
     onSave(selectedDate, updatedLog);
     setNewPartnerNoteText('');
   };
@@ -119,11 +131,10 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
   };
 
   const handleDeletePartnerNote = (indexToDelete: number) => {
-     const currentLogSnapshot: DailyLog = log || { editorNotes: [], spotifyLink: '', songTitle: '', partnerNotes: [] };
+     const currentLogSnapshot: DailyLog = log || { editorNotes: [], partnerNotes: [] };
     const currentPartnerNotes = currentLogSnapshot.partnerNotes;
 
     if (!currentPartnerNotes || indexToDelete < 0 || indexToDelete >= currentPartnerNotes.length) {
-      console.error("Invalid index for deleting partner note.");
       toast({ title: "Error", description: "Could not delete partner note: invalid index.", variant: "destructive"});
       return;
     }
@@ -149,7 +160,6 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
       const result: SuggestedRepliesOutput = await generateSuggestedReplies({ note: noteToAnalyze });
       setSuggestedReplies(result.suggestedReplies);
     } catch (error) {
-      console.error("Error generating suggestions:", error);
       setErrorSuggestions("Could not fetch suggestions. Please try again.");
     } finally {
       setIsLoadingSuggestions(false);
@@ -164,28 +174,41 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
       return false;
     }
   };
-
-  const handleFetchSongDetailsFromLink = async () => {
-    if (!spotifyLink || !isValidSpotifyTrackUrl(spotifyLink)) {
-      setSongDetailsError("Please enter a valid Spotify track or episode URL.");
+  
+  const handleFetchSongDetails = async (link: string, targetUser: 'editor' | 'partner') => {
+    if (!link || !isValidSpotifyTrackUrl(link)) {
+      const errorMsg = "Please enter a valid Spotify track or episode URL.";
+      if (targetUser === 'editor') setEditorSongDetailsError(errorMsg);
+      else setPartnerSongDetailsError(errorMsg);
       return;
     }
-    setIsFetchingSongDetails(true);
-    setSongDetailsError(null);
+
+    if (targetUser === 'editor') {
+      setIsFetchingEditorSongDetails(true);
+      setEditorSongDetailsError(null);
+    } else {
+      setIsFetchingPartnerSongDetails(true);
+      setPartnerSongDetailsError(null);
+    }
+
     try {
-      const result: ExtractSongDetailsOutput = await extractSongDetails({ spotifyUrl: spotifyLink });
-      setSongTitle(result.songTitle);
+      const result: ExtractSongDetailsOutput = await extractSongDetails({ spotifyUrl: link });
+      if (targetUser === 'editor') setEditorSongTitle(result.songTitle);
+      else setPartnerSongTitle(result.songTitle);
       toast({ title: "Song Details Fetched!", description: `Found title: ${result.songTitle}` });
     } catch (error: any) {
-      console.error("Error fetching song details:", error);
-      setSongDetailsError(error.message || "Could not fetch song details. Please check the link or try again.");
-      toast({ title: "Error Fetching Song Details", description: error.message || "Could not fetch song details.", variant: "destructive" });
+      const errorMsg = error.message || "Could not fetch song details. Please check the link or try again.";
+      if (targetUser === 'editor') setEditorSongDetailsError(errorMsg);
+      else setPartnerSongDetailsError(errorMsg);
+      toast({ title: "Error Fetching Song Details", description: errorMsg, variant: "destructive" });
     } finally {
-      setIsFetchingSongDetails(false);
+      if (targetUser === 'editor') setIsFetchingEditorSongDetails(false);
+      else setIsFetchingPartnerSongDetails(false);
     }
   };
 
-  const renderMoodSelector = (currentMood: MoodEmoji | undefined, onSelectMood: (mood: MoodEmoji) => void, label: string) => (
+
+  const renderMoodSelector = (currentMood: MoodEmoji | null, onSelectMood: (mood: MoodEmoji) => void, label: string) => (
     <div className="space-y-2">
       <Label className="flex items-center font-semibold"><Smile className="w-4 h-4 mr-2 text-accent"/> {label}</Label>
       <div className="flex flex-wrap gap-2">
@@ -206,7 +229,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
     </div>
   );
 
-  const renderTheirMood = (mood: MoodEmoji | undefined, label: string) => {
+  const renderTheirMood = (mood: MoodEmoji | null | undefined, label: string) => {
     if (!mood) return null;
     return (
       <div className="p-3 border rounded-md bg-secondary/30 shadow-sm">
@@ -217,22 +240,89 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
       </div>
     );
   };
+  
+  const renderSongDisplay = (song: SongEntry | null | undefined, userLabel: string) => {
+    if (!song || !song.link) return null;
+    return (
+      <div>
+        <Label className="text-muted-foreground font-semibold flex items-center"><Music2 className="w-4 h-4 mr-2 text-accent"/>{userLabel}'s Song for the Day:</Label>
+        <Button variant="link" asChild className="p-0 h-auto">
+          <a href={song.link} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline truncate block text-left">
+            {song.title ? song.title : song.link}
+          </a>
+        </Button>
+      </div>
+    );
+  };
+
+  const renderSongInputSection = (
+    link: string,
+    setLink: (val: string) => void,
+    title: string,
+    setTitle: (val: string) => void,
+    isFetching: boolean,
+    error: string | null,
+    fetchFn: () => void,
+    userType: 'editor' | 'partner'
+  ) => (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor={`${userType}SpotifyLink`} className="flex items-center font-semibold"><Music2 className="w-4 h-4 mr-2 text-accent"/>Spotify Song/Episode Link</Label>
+        <div className="flex items-center gap-2">
+          <Input
+            id={`${userType}SpotifyLink`}
+            type="url"
+            value={link}
+            onChange={(e) => {
+              setLink(e.target.value);
+              if (userType === 'editor') setEditorSongDetailsError(null); else setPartnerSongDetailsError(null);
+            }}
+            onBlur={fetchFn}
+            placeholder="https://open.spotify.com/track/..."
+            className="flex-grow"
+          />
+          <Button
+            type="button"
+            onClick={fetchFn}
+            disabled={isFetching || !isValidSpotifyTrackUrl(link)}
+            variant="outline"
+            size="icon"
+            aria-label="Fetch song details"
+          >
+            {isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+          </Button>
+        </div>
+        {error && <p className="text-sm text-destructive mt-1">{error}</p>}
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor={`${userType}SongTitle`} className="flex items-center font-semibold"><Music2 className="w-4 h-4 mr-2 text-accent"/>Song/Episode Title</Label>
+        <Input
+          id={`${userType}SongTitle`}
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="e.g., Sunflower (auto-filled from link)"
+        />
+      </div>
+    </div>
+  );
 
 
   const formattedDateDisplay = selectedDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-  // Reader Mode (Partner's View)
-  if (mode === 'reader') {
+  if (mode === 'reader') { // Partner's View
     return (
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle className="font-headline text-2xl text-primary">{formattedDateDisplay}</CardTitle>
-          {(!log || (!log.editorNotes?.length && !log.spotifyLink && !log.partnerNotes?.length && !log.promptForPartner && !log.promptForEditor && !log.moods?.editor && !log.moods?.partner)) && (
+          {(!log || (!log.editorNotes?.length && !log.songs?.editor?.link && !log.partnerNotes?.length && !log.promptForPartner && !log.promptForEditor && !log.moods?.editor && !log.moods?.partner && !log.songs?.partner?.link)) && (
              <CardDescription>No entries for this day yet. Be the first to leave a note or a prompt!</CardDescription>
           )}
         </CardHeader>
         <CardContent className="space-y-6">
           {renderTheirMood(log?.moods?.editor as MoodEmoji | undefined, "Their Mood Today:")}
+          {renderSongDisplay(log?.songs?.editor, "Their")}
+
           {log?.promptForPartner && (
             <div className="p-3 border rounded-md bg-secondary/30 shadow-sm">
               <Label className="text-muted-foreground font-semibold flex items-center mb-1"><MessageCircleQuestion className="w-4 h-4 mr-2 text-accent"/>Their Prompt for You:</Label>
@@ -252,16 +342,6 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               </ul>
             </div>
           )}
-          {log?.spotifyLink && (
-            <div>
-              <Label className="text-muted-foreground font-semibold flex items-center"><Music2 className="w-4 h-4 mr-2 text-accent"/>Their Song for the Day:</Label>
-              <Button variant="link" asChild className="p-0 h-auto">
-                <a href={log.spotifyLink} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline truncate block text-left">
-                  {log.songTitle ? log.songTitle : log.spotifyLink}
-                </a>
-              </Button>
-            </div>
-          )}
           
           {log?.partnerNotes && log.partnerNotes.length > 0 && (
             <div className="mt-4 pt-4 border-t">
@@ -279,9 +359,11 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               </ul>
             </div>
           )}
+          {renderSongDisplay(log?.songs?.partner, "Your")}
+
 
           <form onSubmit={handlePartnerSave} className="space-y-4 pt-6 border-t">
-            {renderMoodSelector(currentPartnerMood, setCurrentPartnerMood, "Your Mood Today:")}
+            {renderMoodSelector(currentPartnerMood, (mood) => setCurrentPartnerMood(mood), "Your Mood Today:")}
             <div className="space-y-2">
               <Label htmlFor="promptForEditor" className="flex items-center font-semibold text-base"><MessageCircleHeart className="w-5 h-5 mr-2 text-accent"/>Your Prompt for Them:</Label>
               <Textarea
@@ -305,9 +387,28 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
               rows={3}
               className="bg-white"
             />
-             <Button type="submit" className="w-full" disabled={!newPartnerNoteText.trim() && !promptForEditor.trim() && !currentPartnerMood}>
+            <Accordion type="single" collapsible className="w-full">
+              <AccordionItem value="partner-song">
+                <AccordionTrigger className="text-base font-semibold text-primary hover:no-underline">
+                  <div className="flex items-center">
+                    <Music2 className="w-5 h-5 mr-2 text-accent"/> Add a song for the day for them?
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pt-4">
+                  {renderSongInputSection(
+                    partnerSpotifyLink, setPartnerSpotifyLink,
+                    partnerSongTitle, setPartnerSongTitle,
+                    isFetchingPartnerSongDetails, partnerSongDetailsError,
+                    () => handleFetchSongDetails(partnerSpotifyLink, 'partner'),
+                    'partner'
+                  )}
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+
+             <Button type="submit" className="w-full" disabled={!newPartnerNoteText.trim() && !promptForEditor.trim() && !currentPartnerMood && !partnerSpotifyLink.trim() && !partnerSongTitle.trim()}>
                 <Save className="w-4 h-4 mr-2"/>
-                Add My Note, Prompt & Mood
+                Add My Note, Prompt, Mood & Song
               </Button>
           </form>
         </CardContent>
@@ -324,8 +425,10 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
           <CardDescription>Share your thoughts, mood, a song, prompts, and see notes from your partner.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {renderMoodSelector(currentEditorMood, setCurrentEditorMood, "Your Mood Today:")}
+          {renderMoodSelector(currentEditorMood, (mood) => setCurrentEditorMood(mood), "Your Mood Today:")}
           {renderTheirMood(log?.moods?.partner as MoodEmoji | undefined, "Their Mood Today:")}
+          {renderSongDisplay(log?.songs?.partner, "Their")}
+
 
           {log?.promptForEditor && (
              <div className="p-3 border rounded-md bg-secondary/50 shadow-sm">
@@ -368,45 +471,14 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="spotifyLink" className="flex items-center font-semibold"><Music2 className="w-4 h-4 mr-2 text-accent"/>Spotify Song/Episode Link</Label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="spotifyLink"
-                type="url"
-                value={spotifyLink}
-                onChange={(e) => {
-                  setSpotifyLink(e.target.value);
-                  setSongDetailsError(null);
-                }}
-                onBlur={handleFetchSongDetailsFromLink}
-                placeholder="https://open.spotify.com/track/..."
-                className="flex-grow"
-              />
-              <Button
-                type="button"
-                onClick={handleFetchSongDetailsFromLink}
-                disabled={isFetchingSongDetails || !isValidSpotifyTrackUrl(spotifyLink)}
-                variant="outline"
-                size="icon"
-                aria-label="Fetch song details"
-              >
-                {isFetchingSongDetails ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-              </Button>
-            </div>
-            {songDetailsError && <p className="text-sm text-destructive mt-1">{songDetailsError}</p>}
-          </div>
+          {renderSongInputSection(
+            editorSpotifyLink, setEditorSpotifyLink,
+            editorSongTitle, setEditorSongTitle,
+            isFetchingEditorSongDetails, editorSongDetailsError,
+            () => handleFetchSongDetails(editorSpotifyLink, 'editor'),
+            'editor'
+          )}
 
-          <div className="space-y-2">
-            <Label htmlFor="songTitle" className="flex items-center font-semibold"><Music2 className="w-4 h-4 mr-2 text-accent"/>Song/Episode Title</Label>
-            <Input
-              id="songTitle"
-              type="text"
-              value={songTitle}
-              onChange={(e) => setSongTitle(e.target.value)}
-              placeholder="e.g., Sunflower (auto-filled from link)"
-            />
-          </div>
 
           {log?.partnerNotes && log.partnerNotes.length > 0 && (
             <div className="space-y-2 pt-4 border-t">
@@ -446,7 +518,7 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
 
         </CardContent>
         <CardFooter className="flex flex-col gap-3">
-          {onDelete && (log?.editorNotes?.length || log?.spotifyLink || log?.partnerNotes?.length || log?.songTitle || log?.promptForEditor || log?.promptForPartner || log?.moods?.editor || log?.moods?.partner) && (
+          {onDelete && (log?.editorNotes?.length || log?.songs?.editor?.link || log?.partnerNotes?.length || log?.songs?.partner?.link || log?.promptForEditor || log?.promptForPartner || log?.moods?.editor || log?.moods?.partner) && (
              <Button type="button" variant="destructive" onClick={handleDeleteEntireEntry} className="w-full">
                 <Trash2 className="w-4 h-4 mr-2"/> Delete Entire Day's Entry
               </Button>
@@ -456,20 +528,19 @@ export function DailyDetailsCard({ selectedDate, log, onSave, onDelete, mode }: 
             className="w-full whitespace-normal text-center h-auto" 
             disabled={
               !newEditorNoteText.trim() && 
-              !spotifyLink.trim() && 
-              !songTitle.trim() && 
+              !editorSpotifyLink.trim() && 
+              !editorSongTitle.trim() && 
               !promptForPartner.trim() && 
               !currentEditorMood &&
-              // Disable if nothing new AND nothing existing to simply re-save/update mood on
-              !(log?.editorNotes?.length || log?.spotifyLink || log?.songTitle || log?.promptForPartner || log?.moods?.editor)
+              // Disable if nothing new AND nothing existing that could be context for just updating mood/prompt/song
+              !(log?.editorNotes?.length || log?.songs?.editor?.link || log?.promptForPartner || log?.moods?.editor)
             }
           >
             <PlusCircle className="w-4 h-4 mr-2"/>
-            Add Note / Update Details, Prompt & Mood
+            Add Note / Update Details, Prompt, Mood & Song
           </Button>
         </CardFooter>
       </form>
     </Card>
   );
 }
-
