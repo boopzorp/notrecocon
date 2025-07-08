@@ -513,7 +513,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   return (
     <AppContext.Provider value={{ ...state, selectEvent, addEvent, updateEvent, deleteEvent, upsertLog, getLog, isEventSelected, resetAllAppData, setUserRole, attemptLoginWithCode, addBucketListItem, toggleBucketListItem, deleteBucketListItem }}>
       {children}
-    </AppAppContext.Provider>
+    </AppContext.Provider>
   );
 };
 
