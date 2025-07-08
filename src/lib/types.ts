@@ -41,3 +41,11 @@ export interface AppGlobalConfig {
   editorCode: string | null;
   partnerCode: string | null;
 }
+
+export interface BucketListItem {
+  id: string;
+  text: string;
+  completed: boolean;
+  createdAt: any; // Firestore Timestamp
+  createdBy: 'editor' | 'partner' | null;
+}
