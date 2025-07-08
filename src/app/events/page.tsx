@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from 'react';
@@ -13,6 +12,7 @@ import { CalendarDays, ChevronRight, PlusCircle, Trash2, AlertTriangle, Info, Lo
 import { format, parseISO, differenceInCalendarDays, isPast } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import type { Event } from '@/lib/types';
+import { BucketList } from '@/components/BucketList';
 
 function EventStatus({ event }: { event: Event }) {
   if (event.isEvergreen) {
@@ -200,16 +200,18 @@ export default function EventsPage() {
                  </CardContent>
             </Card>
         )}
-
-        <div className="mt-12 text-center">
-          <Button variant="ghost" onClick={handleLogout} size="lg" className="text-muted-foreground hover:text-destructive">
-            <LogOut className="w-5 h-5 mr-2" /> Leave Our Space
-          </Button>
-        </div>
-
       </PageSection>
+
+      <PageSection title="Our Bucket List" titleClassName="text-primary">
+          <BucketList />
+      </PageSection>
+
+      <div className="mt-12 text-center">
+        <Button variant="ghost" onClick={handleLogout} size="lg" className="text-muted-foreground hover:text-destructive">
+          <LogOut className="w-5 h-5 mr-2" /> Leave Our Space
+        </Button>
+      </div>
+
     </AppContainer>
   );
 }
-
-    

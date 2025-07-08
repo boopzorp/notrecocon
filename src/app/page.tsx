@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from 'next/link';
@@ -9,7 +8,6 @@ import { Edit3, Eye, LogOut, Briefcase } from 'lucide-react';
 import { useAppContext } from '@/context/AppContext';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { BucketList } from '@/components/BucketList';
 
 export default function HomePage() {
   const { userRole, isInitialized, setUserRole, selectedEvent } = useAppContext();
@@ -88,8 +86,6 @@ export default function HomePage() {
             </Button>
           </CardContent>
         </Card>
-
-        <BucketList />
 
       </div>
     </AppContainer>
